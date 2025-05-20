@@ -1,3 +1,4 @@
 .idea/
 vendor/
 mcp-custom-prompts
+coverage.out

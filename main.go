@@ -107,11 +107,16 @@ func buildPrompts(s *server.MCPServer, promptsDir string) error {
 					if readErr != nil {
 						return nil, fmt.Errorf("read file %s: %w", filePath, readErr)
 					}
+					replaceArg := func(text, arg, value string) string {
+						re := regexp.MustCompile(`\{\{\s*` + regexp.QuoteMeta(arg) + `\s*\}\}`)
+						return re.ReplaceAllString(text, value)
+					}
+
 					for arg, value := range envArgs {
-						userPromptMsg = strings.ReplaceAll(userPromptMsg, "{{"+arg+"}}", value)
+						userPromptMsg = replaceArg(userPromptMsg, arg, value)
 					}
 					for arg, value := range request.Params.Arguments {
-						userPromptMsg = strings.ReplaceAll(userPromptMsg, "{{"+arg+"}}", value)
+						userPromptMsg = replaceArg(userPromptMsg, arg, value)
 					}
 					return mcp.NewGetPromptResult(
 						description,
@@ -141,10 +146,10 @@ func extractArguments(text string) []string {
 	matches := re.FindAllStringSubmatch(text, -1)
 
 	// Use a map to deduplicate arguments
-	argsMap := make(map[string]bool)
+	argsMap := make(map[string]struct{})
 	for _, match := range matches {
 		if len(match) > 1 {
-			argsMap[match[1]] = true
+			argsMap[strings.TrimSpace(match[1])] = struct{}{}
 		}
 	}
 
