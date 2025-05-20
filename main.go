@@ -47,20 +47,31 @@ func runServer(promptsDir string, logFile string) error {
 	}
 	logger := slog.New(slog.NewTextHandler(logWriter, nil))
 
-	s := server.NewMCPServer(
+	srvHooks := &server.Hooks{}
+	srvHooks.AddBeforeGetPrompt(func(ctx context.Context, id any, message *mcp.GetPromptRequest) {
+		logger.Info("Received prompt request",
+			"id", id, "params_name", message.Params.Name, "params_args", message.Params.Arguments)
+	})
+	srvHooks.AddAfterGetPrompt(func(ctx context.Context, id any, message *mcp.GetPromptRequest, result *mcp.GetPromptResult) {
+		logger.Info("Processed prompt request",
+			"id", id, "params_name", message.Params.Name, "params_args", message.Params.Arguments)
+
+	})
+
+	srv := server.NewMCPServer(
 		"Custom Prompts Server",
 		"1.0.0",
-		server.WithResourceCapabilities(true, true),
 		server.WithLogging(),
 		server.WithRecovery(),
+		server.WithHooks(srvHooks),
 	)
 
-	if err := buildPrompts(s, promptsDir, logger); err != nil {
+	if err := buildPrompts(srv, promptsDir, logger); err != nil {
 		return fmt.Errorf("build prompts: %w", err)
 	}
 
 	logger.Info("Starting stdio server")
-	if err := server.ServeStdio(s); err != nil && !errors.Is(err, context.Canceled) {
+	if err := server.ServeStdio(srv); err != nil && !errors.Is(err, context.Canceled) {
 		logger.Error("Error starting stdio server", "error", err)
 		return fmt.Errorf("serve stdio: %w", err)
 	}
