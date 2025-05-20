@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,6 +22,7 @@ var version = "dev"
 func main() {
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	promptsDir := flag.String("prompts", "./prompts", "Directory containing prompt markdown files")
+	logFile := flag.String("log-file", "", "Path to log file (if not specified, logs to stdout)")
 	flag.Parse()
 
 	if *showVersion {
@@ -26,6 +30,22 @@ func main() {
 		fmt.Println("Go version: ", runtime.Version())
 		return
 	}
+
+	if err := runServer(*promptsDir, *logFile); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func runServer(promptsDir string, logFile string) error {
+	logWriter := os.Stdout
+	if logFile != "" {
+		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			return fmt.Errorf("open log file: %w", err)
+		}
+		logWriter = file
+	}
+	logger := slog.New(slog.NewTextHandler(logWriter, nil))
 
 	s := server.NewMCPServer(
 		"Custom Prompts Server",
@@ -35,18 +55,21 @@ func main() {
 		server.WithRecovery(),
 	)
 
-	if err := buildPrompts(s, *promptsDir); err != nil {
-		fmt.Printf("Error building prompts: %v\n", err)
-		os.Exit(1)
+	if err := buildPrompts(s, promptsDir, logger); err != nil {
+		return fmt.Errorf("build prompts: %w", err)
 	}
 
-	if err := server.ServeStdio(s); err != nil {
-		fmt.Printf("Server error: %v\n", err)
+	logger.Info("Starting stdio server")
+	if err := server.ServeStdio(s); err != nil && !errors.Is(err, context.Canceled) {
+		logger.Error("Error starting stdio server", "error", err)
+		return fmt.Errorf("serve stdio: %w", err)
 	}
+
+	return nil
 }
 
 // buildPrompts builds and registers prompts with the server
-func buildPrompts(s *server.MCPServer, promptsDir string) error {
+func buildPrompts(s *server.MCPServer, promptsDir string, logger *slog.Logger) error {
 	readPromptFromFile := func(filePath string) (description string, prompt string, err error) {
 		var fileBytes []byte
 		if fileBytes, err = os.ReadFile(filePath); err != nil {
@@ -70,7 +93,7 @@ func buildPrompts(s *server.MCPServer, promptsDir string) error {
 			filePath := filepath.Join(promptsDir, file.Name())
 			promptDescription, promptText, err := readPromptFromFile(filePath)
 			if err != nil {
-				fmt.Printf("Error reading prompt file %s: %v\n", filePath, err)
+				logger.Error("Error reading prompt file", "file", filePath, "error", err)
 				continue
 			}
 
@@ -132,8 +155,11 @@ func buildPrompts(s *server.MCPServer, promptsDir string) error {
 
 			s.AddPrompt(prompt, promptHandler(filePath, promptDescription, envArgs))
 
-			fmt.Printf("Prompt %s registered, description: %q, prompt args: %v, env args: %v\n",
-				promptName, promptDescription, promptArgs, envArgs)
+			logger.Info("Prompt registered",
+				"name", promptName,
+				"description", promptDescription,
+				"prompt_args", promptArgs,
+				"env_args", envArgs)
 		}
 	}
 
