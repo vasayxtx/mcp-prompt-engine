@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"log/slog"
 	"os"
@@ -26,6 +27,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	promptsDir := flag.String("prompts", "./prompts", "Directory containing prompt template files")
 	logFile := flag.String("log-file", "", "Path to log file (if not specified, logs to stdout)")
+	templateFlag := flag.String("template", "", "Template name to render to stdout")
 	flag.Parse()
 
 	if *showVersion {
@@ -34,22 +36,30 @@ func main() {
 		return
 	}
 
-	if err := runServer(*promptsDir, *logFile); err != nil {
-		log.Fatal(err)
+	// If template flag is provided, render the template to stdout
+	if *templateFlag != "" {
+		if err := renderTemplate(os.Stdout, *promptsDir, *templateFlag); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
-}
 
-func runServer(promptsDir string, logFile string) error {
 	logWriter := os.Stdout
-	if logFile != "" {
-		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if *logFile != "" {
+		file, err := os.OpenFile(*logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 		if err != nil {
-			return fmt.Errorf("open log file: %w", err)
+			log.Fatal(fmt.Errorf("open log file: %w", err))
 		}
 		logWriter = file
 	}
 	logger := slog.New(slog.NewTextHandler(logWriter, nil))
 
+	if err := runServer(*promptsDir, logger); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func runServer(promptsDir string, logger *slog.Logger) error {
 	srvHooks := &server.Hooks{}
 	srvHooks.AddBeforeGetPrompt(func(ctx context.Context, id any, message *mcp.GetPromptRequest) {
 		logger.Info("Received prompt request",
@@ -407,4 +417,79 @@ func dict(values ...interface{}) map[string]interface{} {
 		result[key] = values[i+1]
 	}
 	return result
+}
+
+// renderTemplate renders a specified template to stdout with resolved partials and environment variables
+func renderTemplate(w io.Writer, promptsDir string, templateName string) error {
+	// Parse all templates in the directory
+	tmpl, err := parseAllPrompts(promptsDir)
+	if err != nil {
+		return fmt.Errorf("parse all prompts: %w", err)
+	}
+
+	// Check if the requested template exists
+	if tmpl.Lookup(templateName) == nil {
+		return fmt.Errorf("template %q not found", templateName)
+	}
+
+	// Load partials to extract arguments
+	partials, err := loadPartials(promptsDir)
+	if err != nil {
+		return fmt.Errorf("load partials: %w", err)
+	}
+
+	// Extract template arguments
+	filePath := filepath.Join(promptsDir, templateName+".tmpl")
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		// Try to find the template file without extension
+		files, err := os.ReadDir(promptsDir)
+		if err != nil {
+			return fmt.Errorf("read prompts directory: %w", err)
+		}
+
+		found := false
+		for _, file := range files {
+			if file.Type().IsRegular() && strings.HasSuffix(file.Name(), ".tmpl") && !strings.HasPrefix(file.Name(), "_") {
+				baseName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
+				if baseName == templateName {
+					filePath = filepath.Join(promptsDir, file.Name())
+					found = true
+					break
+				}
+			}
+		}
+
+		if !found {
+			return fmt.Errorf("template file for %q not found", templateName)
+		}
+	}
+
+	args, err := extractPromptArguments(filePath, partials)
+	if err != nil {
+		return fmt.Errorf("extract template arguments: %w", err)
+	}
+
+	// Create data map with environment variables
+	data := make(map[string]interface{})
+	data["date"] = time.Now().Format("2006-01-02 15:04:05")
+
+	// Add environment variables to data map
+	for _, arg := range args {
+		// Convert arg to TITLE_CASE for env var
+		envVarName := strings.ToUpper(arg)
+		if envValue, exists := os.LookupEnv(envVarName); exists {
+			data[arg] = envValue
+		} else {
+			data[arg] = "{{ " + arg + " }}"
+		}
+	}
+
+	// Execute template
+	var result bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&result, templateName, data); err != nil {
+		return fmt.Errorf("execute template: %w", err)
+	}
+
+	_, err = w.Write(result.Bytes())
+	return err
 }

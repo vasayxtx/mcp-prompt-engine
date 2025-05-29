@@ -1,15 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
@@ -282,6 +283,96 @@ func TestLoadPartials(t *testing.T) {
 	}
 }
 
+func TestRenderTemplate(t *testing.T) {
+	tests := []struct {
+		name           string
+		templateName   string
+		envVars        map[string]string
+		expectedOutput string
+		shouldError    bool
+	}{
+		{
+			name:           "greeting template, env var not set",
+			templateName:   "greeting",
+			expectedOutput: "Hello {{ name }}!\nHave a great day!",
+			shouldError:    false,
+		},
+		{
+			name:         "greeting template",
+			templateName: "greeting",
+			envVars: map[string]string{
+				"NAME": "John",
+			},
+			expectedOutput: "Hello John!\nHave a great day!",
+			shouldError:    false,
+		},
+		{
+			name:         "template with partials, some env vars not set",
+			templateName: "multiple_partials",
+			envVars: map[string]string{
+				"TITLE":   "Test Document",
+				"NAME":    "Bob",
+				"VERSION": "1.0.0",
+			},
+			expectedOutput: "# Test Document\nCreated by: {{ author }}\n## Description\n{{ description }}\n## Details\nThis is a test template with multiple partials.\nHello Bob!\nVersion: 1.0.0",
+			shouldError:    false,
+		},
+		{
+			name:         "template with partials",
+			templateName: "multiple_partials",
+			envVars: map[string]string{
+				"TITLE":       "Test Document",
+				"AUTHOR":      "Test Author",
+				"NAME":        "Bob",
+				"DESCRIPTION": "This is a test description",
+				"VERSION":     "1.0.0",
+			},
+			expectedOutput: "# Test Document\nCreated by: Test Author\n## Description\nThis is a test description\n## Details\nThis is a test template with multiple partials.\nHello Bob!\nVersion: 1.0.0",
+			shouldError:    false,
+		},
+		{
+			name:           "non-existent template",
+			templateName:   "non_existent_template",
+			envVars:        map[string]string{},
+			expectedOutput: "",
+			shouldError:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			originalEnv := make(map[string]string)
+			for k := range tt.envVars {
+				originalEnv[k] = os.Getenv(k)
+			}
+			defer func() {
+				for k, v := range originalEnv {
+					os.Setenv(k, v)
+				}
+			}()
+
+			for k, v := range tt.envVars {
+				os.Setenv(k, v)
+			}
+
+			var buf bytes.Buffer
+			err := renderTemplate(&buf, "./testdata", tt.templateName)
+
+			if tt.shouldError && err == nil {
+				t.Errorf("expected error but got none")
+			}
+			if !tt.shouldError && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+
+			output := normalizeNewlines(buf.String())
+			if output != tt.expectedOutput {
+				t.Errorf("expected output %q, got %q", tt.expectedOutput, output)
+			}
+		})
+	}
+}
+
 func TestServerWithPrompt(t *testing.T) {
 	ctx := context.Background()
 
@@ -342,7 +433,7 @@ func TestServerWithPrompt(t *testing.T) {
 			expectedMessages: []mcp.PromptMessage{
 				{
 					Role:    mcp.RoleUser,
-					Content: mcp.NewTextContent("# Test Document\n\nCreated by: Test Author\n\n## Description\n\nThis is a test description\n\n## Details\n\nThis is a test template with multiple partials.\n\n\nHello Bob!\n\n---\nGenerated on: " + time.Now().Format("2006-01-02 15:04:05") + "\nVersion: 1.0.0\n"),
+					Content: mcp.NewTextContent("# Test Document\nCreated by: Test Author\n## Description\nThis is a test description\n## Details\nThis is a test template with multiple partials.\nHello Bob!\nVersion: 1.0.0"),
 				},
 			},
 		},
@@ -373,24 +464,18 @@ func TestServerWithPrompt(t *testing.T) {
 				if !ok {
 					t.Fatalf("Expected TextContent, got %T", msg.Content)
 				}
-
-				// For the date in multiple_partials test, we need to handle it differently
-				if tt.name == "template with multiple partials" {
-					// Extract the date from the actual content
-					actualContent := content.Text
-					expectedContent := tt.expectedMessages[i].Content.(mcp.TextContent).Text
-
-					// Compare the content without worrying about the exact date
-					if !strings.Contains(actualContent, "Generated on:") || !strings.Contains(expectedContent, "Generated on:") {
-						t.Errorf("Expected message content to contain 'Generated on:', but it doesn't")
-					}
-				} else {
-					// For other tests, compare the exact content
-					if content.Text != tt.expectedMessages[i].Content.(mcp.TextContent).Text {
-						t.Errorf("Expected message content %q, got %q", tt.expectedMessages[i].Content.(mcp.TextContent).Text, content.Text)
-					}
+				s := normalizeNewlines(content.Text)
+				if s != tt.expectedMessages[i].Content.(mcp.TextContent).Text {
+					t.Errorf("Expected message content %q, got %q", tt.expectedMessages[i].Content.(mcp.TextContent).Text, s)
 				}
 			}
 		})
 	}
+}
+
+var nlRegExp = regexp.MustCompile(`\n+`)
+
+func normalizeNewlines(s string) string {
+	s = nlRegExp.ReplaceAllString(s, "\n")
+	return strings.TrimSpace(s)
 }
