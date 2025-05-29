@@ -52,7 +52,7 @@ The server uses Go's `text/template` engine, which provides powerful templating 
 
 ### Partials (Reusable Components)
 
-Create reusable template components by prefixing filenames with `_`. These partials can be included in other templates:
+Create reusable template components by prefixing filenames with `_`. These partials can be included in other templates using the `{{template "partial_name" .}}` syntax. The system automatically detects which partials are used by each template:
 
 **Example partial** (`_header.tmpl`):
 ```go
@@ -120,9 +120,20 @@ Remember to be specific in your recommendations, providing clear guidance on how
 ./mcp-custom-prompts -prompts /path/to/prompts/directory -log-file /path/to/log/file
 ```
 
+### Rendering a Template to Stdout
+
+You can also render a specific template directly to stdout without starting the server:
+
+```bash
+./mcp-custom-prompts -prompts /path/to/prompts/directory -template template_name
+```
+
+This is useful for testing templates or using them in shell scripts.
+
 Options:
 - `-prompts`: Directory containing prompt template files (default: "./prompts")
 - `-log-file`: Path to log file (if not specified, logs to stdout)
+- `-template`: Template name to render to stdout (bypasses server mode)
 - `-version`: Show version and exit
 
 ## Configuring Claude Desktop
@@ -155,47 +166,14 @@ For example, if your prompt contains `{{.username}}` and you set the environment
 
 In the Claude Desktop configuration above, the `"env"` section allows you to define environment variables that will be injected into your prompts.
 
-## Migration from Markdown Templates
-
-If you have existing markdown-based templates (`.md` files), here's how to migrate them to the new `.tmpl` format:
-
-### Old format (`.md`):
-```markdown
-Brief description of the prompt
-Your prompt text here with {{argument_name}} placeholders.
-```
-
-### New format (`.tmpl`):
-```go
-{{/* Brief description of the prompt */}}
-Your prompt text here with {{.argument_name}} placeholders.
-```
-
-### Key changes:
-1. **File extension**: `.md` → `.tmpl`
-2. **Description**: First line → First line comment `{{/* description */}}`
-3. **Variables**: `{{argument}}` → `{{.argument}}`
-4. **Template engine**: Simple replacement → Go `text/template`
-
-## Directory Structure
-
-Here's an example directory structure for your prompts:
-
-```
-prompts/
-├── _header.tmpl           # Partial: Common header
-├── _analysis_footer.tmpl  # Partial: Analysis footer
-├── code_review.tmpl       # Main prompt: Code review
-├── documentation.tmpl     # Main prompt: Documentation
-└── bug_analysis.tmpl      # Main prompt: Bug analysis
-```
-
 ## How It Works
 
 1. **Server startup**: The server parses all `.tmpl` files on startup:
    - Loads partials (files starting with `_`) for reuse
    - Loads main prompt templates (files not starting with `_`)
-   - Extracts template variables and registers them as MCP prompt parameters
+   - Extracts template variables by analyzing the template content and its used partials
+   - Only partials that are actually referenced by the template are included
+   - Template arguments are extracted from patterns like `{{.fieldname}}` and `dict "key" .value`
    - Note: Adding new templates or variables requires a server restart
 
 2. **Prompt request processing**: When a prompt is requested:

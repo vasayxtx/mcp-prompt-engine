@@ -25,6 +25,17 @@ var version = "dev"
 
 const templateExt = ".tmpl"
 
+var (
+	// templateArgsRegex regex matches patterns like {{.fieldname}} or {{ .fieldname }}
+	templateArgsRegex = regexp.MustCompile(`{{\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*}}`)
+
+	// templateCallRegex regex matches patterns like {{template "partial_name" ...}} or {{template "_partial" ...}}
+	templateCallRegex = regexp.MustCompile(`{{\s*template\s+["']([a-zA-Z_][a-zA-Z0-9_]*)["']\s+[^}]*}}`)
+
+	// dictArgRegex regex matches patterns like dict "key" .value or dict "key" .value "key2" .value2
+	dictArgRegex = regexp.MustCompile(`dict\s+"([^"]+)"\s+\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+"[^"]+"\s+\.([a-zA-Z_][a-zA-Z0-9_]*))*`)
+)
+
 func main() {
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	promptsDir := flag.String("prompts", "./prompts", "Directory containing prompt template files")
@@ -197,6 +208,7 @@ func extractPromptDescription(filePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read file: %w", err)
 	}
+	content = bytes.TrimSpace(content)
 
 	var firstLine string
 	if idx := bytes.IndexByte(content, '\n'); idx != -1 {
@@ -222,8 +234,6 @@ func extractPromptDescription(filePath string) (string, error) {
 
 	return "", nil
 }
-
-var templateArgsRegex = regexp.MustCompile(`{{\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*}}`)
 
 // extractPromptArguments analyzes template source to find field references,
 // including only partials that are actually used by the template
@@ -275,11 +285,6 @@ func extractPromptArguments(filePath string, partials map[string]string) ([]stri
 		return nil, err
 	}
 
-	// Also need to analyze template calls with dict arguments like {{template "_header" dict "role" .role}}
-	// to extract arguments passed to partials
-	// This regex matches patterns like dict "key" .value or dict "key" .value "key2" .value2
-	dictArgRegex := regexp.MustCompile(`dict\s+"([^"]+)"\s+\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+"[^"]+"\s+\.([a-zA-Z_][a-zA-Z0-9_]*))*`)
-
 	// Collect content from main template + all used partials
 	allContent := mainContent
 	for _, partialContent := range usedPartials {
@@ -290,7 +295,7 @@ func extractPromptArguments(filePath string, partials map[string]string) ([]stri
 	// Match patterns like {{.fieldname}} and {{ .fieldname }}
 	matches := templateArgsRegex.FindAllStringSubmatch(allContent, -1)
 
-	// Also extract dict arguments from template calls
+	// Also extract dict arguments from template calls like {{template "partial_name" dict "key" .value "key2" .value2}}
 	dictMatches := dictArgRegex.FindAllStringSubmatch(allContent, -1)
 
 	// Use a map to deduplicate arguments and filter out built-in fields
@@ -338,7 +343,6 @@ func findUsedPartials(content string, allPartials map[string]string) map[string]
 
 	// Match template calls like {{template "partial_name" ...}} or {{template "_partial" ...}}
 	// This regex captures partial names with or without underscore prefix
-	templateCallRegex := regexp.MustCompile(`{{\s*template\s+["']([a-zA-Z_][a-zA-Z0-9_]*)["']\s+[^}]*}}`)
 	matches := templateCallRegex.FindAllStringSubmatch(content, -1)
 
 	for _, match := range matches {
@@ -438,31 +442,10 @@ func renderTemplate(w io.Writer, promptsDir string, templateName string) error {
 	}
 
 	// Extract template arguments
-	filePath := filepath.Join(promptsDir, templateName+templateExt)
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		// Try to find the template file without extension
-		files, err := os.ReadDir(promptsDir)
-		if err != nil {
-			return fmt.Errorf("read prompts directory: %w", err)
-		}
-
-		found := false
-		for _, file := range files {
-			if file.Type().IsRegular() && strings.HasSuffix(file.Name(), templateExt) && !strings.HasPrefix(file.Name(), "_") {
-				baseName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
-				if baseName == templateName {
-					filePath = filepath.Join(promptsDir, file.Name())
-					found = true
-					break
-				}
-			}
-		}
-
-		if !found {
-			return fmt.Errorf("template file for %q not found", templateName)
-		}
+	filePath := filepath.Join(promptsDir, templateName)
+	if !strings.HasSuffix(filePath, templateExt) {
+		filePath += templateExt
 	}
-
 	args, err := extractPromptArguments(filePath, partials)
 	if err != nil {
 		return fmt.Errorf("extract template arguments: %w", err)
@@ -485,10 +468,9 @@ func renderTemplate(w io.Writer, promptsDir string, templateName string) error {
 
 	// Execute template
 	var result bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&result, templateName, data); err != nil {
+	if err = tmpl.ExecuteTemplate(&result, templateName, data); err != nil {
 		return fmt.Errorf("execute template: %w", err)
 	}
-
 	_, err = w.Write(result.Bytes())
 	return err
 }
