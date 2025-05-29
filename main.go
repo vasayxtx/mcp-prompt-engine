@@ -23,6 +23,8 @@ import (
 
 var version = "dev"
 
+const templateExt = ".tmpl"
+
 func main() {
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	promptsDir := flag.String("prompts", "./prompts", "Directory containing prompt template files")
@@ -114,7 +116,7 @@ func buildPrompts(srv promptServer, promptsDir string, logger *slog.Logger) erro
 	}
 
 	for _, file := range files {
-		if file.Type().IsRegular() && strings.HasSuffix(file.Name(), ".tmpl") && !strings.HasPrefix(file.Name(), "_") {
+		if file.Type().IsRegular() && strings.HasSuffix(file.Name(), templateExt) && !strings.HasPrefix(file.Name(), "_") {
 			filePath := filepath.Join(promptsDir, file.Name())
 
 			// Parse template and extract description
@@ -153,7 +155,7 @@ func buildPrompts(srv promptServer, promptsDir string, logger *slog.Logger) erro
 			}
 
 			srv.AddPrompt(mcp.NewPrompt(promptName, promptOpts...),
-				promptHandler(promptsDir, strings.TrimSuffix(file.Name(), ".tmpl"), description, envArgs))
+				promptHandler(promptsDir, strings.TrimSuffix(file.Name(), templateExt), description, envArgs))
 
 			logger.Info("Prompt registered",
 				"name", promptName,
@@ -176,16 +178,13 @@ func loadPartials(promptsDir string) (map[string]string, error) {
 	}
 
 	for _, file := range files {
-		if file.Type().IsRegular() && strings.HasSuffix(file.Name(), ".tmpl") && strings.HasPrefix(file.Name(), "_") {
+		if file.Type().IsRegular() && strings.HasSuffix(file.Name(), templateExt) && strings.HasPrefix(file.Name(), "_") {
 			filePath := filepath.Join(promptsDir, file.Name())
 			content, err := os.ReadFile(filePath)
 			if err != nil {
 				return nil, fmt.Errorf("read partial file %s: %w", filePath, err)
 			}
-
-			// Remove the .tmpl suffix to get the partial name
-			partialName := strings.TrimSuffix(file.Name(), ".tmpl")
-			//partialName = strings.TrimPrefix(partialName, "_")
+			partialName := strings.TrimSuffix(file.Name(), templateExt)
 			partials[partialName] = string(content)
 		}
 	}
@@ -396,9 +395,9 @@ func parseAllPrompts(promptsDir string) (*template.Template, error) {
 	tmpl := template.New("").Funcs(template.FuncMap{
 		"dict": dict,
 	})
-	tmpl, err := tmpl.ParseGlob(promptsDir + "/*.tmpl")
+	tmpl, err := tmpl.ParseGlob(promptsDir + "/*" + templateExt)
 	if err != nil {
-		return nil, fmt.Errorf("parse template glob %q: %w", promptsDir+"/*.tmpl", err)
+		return nil, fmt.Errorf("parse template glob %q: %w", promptsDir+"/*"+templateExt, err)
 	}
 	return tmpl, nil
 }
@@ -439,7 +438,7 @@ func renderTemplate(w io.Writer, promptsDir string, templateName string) error {
 	}
 
 	// Extract template arguments
-	filePath := filepath.Join(promptsDir, templateName+".tmpl")
+	filePath := filepath.Join(promptsDir, templateName+templateExt)
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		// Try to find the template file without extension
 		files, err := os.ReadDir(promptsDir)
@@ -449,7 +448,7 @@ func renderTemplate(w io.Writer, promptsDir string, templateName string) error {
 
 		found := false
 		for _, file := range files {
-			if file.Type().IsRegular() && strings.HasSuffix(file.Name(), ".tmpl") && !strings.HasPrefix(file.Name(), "_") {
+			if file.Type().IsRegular() && strings.HasSuffix(file.Name(), templateExt) && !strings.HasPrefix(file.Name(), "_") {
 				baseName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
 				if baseName == templateName {
 					filePath = filepath.Join(promptsDir, file.Name())
