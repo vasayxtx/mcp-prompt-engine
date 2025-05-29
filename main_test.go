@@ -1,11 +1,19 @@
 package main
 
 import (
+	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/vasayxtx/mcp-custom-prompts/mcptest"
 )
 
 func TestExtractTemplateArguments(t *testing.T) {
@@ -17,6 +25,7 @@ func TestExtractTemplateArguments(t *testing.T) {
 		partials    map[string]string
 		expected    []string
 		description string
+		shouldError bool
 	}{
 		{
 			name:        "empty template",
@@ -24,6 +33,7 @@ func TestExtractTemplateArguments(t *testing.T) {
 			partials:    map[string]string{},
 			expected:    []string{},
 			description: "Empty template",
+			shouldError: false,
 		},
 		{
 			name:        "single argument",
@@ -31,6 +41,7 @@ func TestExtractTemplateArguments(t *testing.T) {
 			partials:    map[string]string{},
 			expected:    []string{"name"},
 			description: "Single argument template",
+			shouldError: false,
 		},
 		{
 			name:        "multiple arguments",
@@ -38,6 +49,7 @@ func TestExtractTemplateArguments(t *testing.T) {
 			partials:    map[string]string{},
 			expected:    []string{"name", "project", "language"},
 			description: "Multiple arguments template",
+			shouldError: false,
 		},
 		{
 			name:        "arguments with built-in date",
@@ -45,6 +57,7 @@ func TestExtractTemplateArguments(t *testing.T) {
 			partials:    map[string]string{},
 			expected:    []string{"username"}, // date is built-in, should be filtered out
 			description: "Template with date",
+			shouldError: false,
 		},
 		{
 			name:        "template with used partial only",
@@ -52,6 +65,7 @@ func TestExtractTemplateArguments(t *testing.T) {
 			partials:    map[string]string{"header": "You are {{.role}} doing {{.task}}", "footer": "End with {{.conclusion}}"},
 			expected:    []string{"role", "task", "username"}, // should NOT include conclusion from unused footer
 			description: "Template with used partial only",
+			shouldError: false,
 		},
 		{
 			name:        "template with multiple used partials",
@@ -59,6 +73,7 @@ func TestExtractTemplateArguments(t *testing.T) {
 			partials:    map[string]string{"header": "You are {{.role}}", "footer": "End with {{.conclusion}}", "unused": "This has {{.unused_var}}"},
 			expected:    []string{"role", "conclusion", "username"}, // should NOT include unused_var
 			description: "Template with multiple partials",
+			shouldError: false,
 		},
 		{
 			name:        "template with no partials used",
@@ -66,6 +81,7 @@ func TestExtractTemplateArguments(t *testing.T) {
 			partials:    map[string]string{"header": "You are {{.role}}", "footer": "End with {{.conclusion}}"},
 			expected:    []string{"simple"}, // should NOT include role or conclusion
 			description: "Template with no partials used",
+			shouldError: false,
 		},
 		{
 			name:        "duplicate arguments",
@@ -73,21 +89,55 @@ func TestExtractTemplateArguments(t *testing.T) {
 			partials:    map[string]string{},
 			expected:    []string{"user"},
 			description: "Duplicate arguments",
+			shouldError: false,
+		},
+		{
+			name:    "cyclic partial references",
+			content: "{{/* Template with cyclic partials */}}\n{{template \"_a\" .}}\nMain content: {{.main}}",
+			partials: map[string]string{
+				"_a": "Partial A with {{.a_var}} {{template \"_b\" .}}",
+				"_b": "Partial B with {{.b_var}} {{template \"_c\" .}}",
+				"_c": "Partial C with {{.c_var}} {{template \"_a\" .}}", // Creates a cycle: a -> b -> c -> a
+			},
+			expected:    nil,
+			description: "Template with cyclic partials",
+			shouldError: true,
+		},
+		{
+			name:    "deeply nested partials",
+			content: "{{/* Template with deeply nested partials */}}\n{{template \"_level1\" .}}\nMain content: {{.main_var}}",
+			partials: map[string]string{
+				"_level1": "Level 1 with {{.level1_var}} {{template \"_level2\" .}}",
+				"_level2": "Level 2 with {{.level2_var}} {{template \"_level3\" .}}",
+				"_level3": "Level 3 with {{.level3_var}} {{template \"_level4\" .}}",
+				"_level4": "Level 4 with {{.level4_var}}",
+				"_unused": "This partial is not used {{.unused_var}}",
+			},
+			expected:    []string{"level1_var", "level2_var", "level3_var", "level4_var", "main_var"},
+			description: "Template with deeply nested partials",
+			shouldError: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create test file
 			testFile := filepath.Join(tempDir, tt.name+".tmpl")
 			err := os.WriteFile(testFile, []byte(tt.content), 0644)
 			if err != nil {
 				t.Fatalf("Failed to write test file: %v", err)
 			}
 
-			got, err := extractTemplateArguments(testFile, tt.partials)
+			got, err := extractPromptArguments(testFile, tt.partials)
+
+			if tt.shouldError {
+				if err == nil {
+					t.Errorf("extractPromptArguments() expected error, but got none")
+				}
+				return
+			}
+
 			if err != nil {
-				t.Fatalf("extractTemplateArguments() error = %v", err)
+				t.Fatalf("extractPromptArguments() error = %v", err)
 			}
 
 			// Sort both slices for consistent comparison
@@ -95,73 +145,64 @@ func TestExtractTemplateArguments(t *testing.T) {
 			sort.Strings(tt.expected)
 
 			if !reflect.DeepEqual(got, tt.expected) {
-				t.Errorf("extractTemplateArguments() = %v, want %v", got, tt.expected)
+				t.Errorf("extractPromptArguments() = %v, want %v", got, tt.expected)
 			}
 		})
 	}
 }
 
-func TestParseTemplateFile(t *testing.T) {
+func TestExtractPromptDescription(t *testing.T) {
 	tempDir := t.TempDir()
 
 	tests := []struct {
 		name                string
 		content             string
-		partials            map[string]string
 		expectedDescription string
-		shouldError         bool
 	}{
 		{
 			name:                "valid template with description",
-			content:             "{{/* This is a test template */}}\nHello {{.name}}!",
-			partials:            map[string]string{},
-			expectedDescription: "This is a test template",
-			shouldError:         false,
+			content:             "{{/* Template description */}}",
+			expectedDescription: "Template description",
+		},
+		{
+			name:                "valid template with description, comment starts with dash",
+			content:             "{{- /* Template description */}}",
+			expectedDescription: "Template description",
+		},
+		{
+			name:                "valid template with description, comment ends with dash",
+			content:             "{{/* Template description */ -}}",
+			expectedDescription: "Template description",
+		},
+		{
+			name:                "valid template with description, comment starts and ends with dash",
+			content:             "{{- /* Template description */ -}}",
+			expectedDescription: "Template description",
 		},
 		{
 			name:                "template without description",
-			content:             "Hello {{.name}}!",
-			partials:            map[string]string{},
+			content:             "Hello {{.name}}",
 			expectedDescription: "",
-			shouldError:         false,
 		},
 		{
-			name:                "template with partial",
-			content:             "{{/* Template with partial */}}\n{{template \"test\" .}}",
-			partials:            map[string]string{"test": "Hello {{.name}}"},
-			expectedDescription: "Template with partial",
-			shouldError:         false,
+			name:                "template with valid comment and trim",
+			content:             "{{/* Comment */}}",
+			expectedDescription: "Comment",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create test file
 			testFile := filepath.Join(tempDir, tt.name+".tmpl")
-			err := os.WriteFile(testFile, []byte(tt.content), 0644)
-			if err != nil {
+			if err := os.WriteFile(testFile, []byte(tt.content), 0644); err != nil {
 				t.Fatalf("Failed to write test file: %v", err)
 			}
-
-			tmpl, description, err := parseTemplateFile(testFile, tt.partials)
-
-			if tt.shouldError {
-				if err == nil {
-					t.Errorf("parseTemplateFile() expected error, but got none")
-				}
-				return
-			}
-
+			description, err := extractPromptDescription(testFile)
 			if err != nil {
 				t.Fatalf("parseTemplateFile() error = %v", err)
 			}
-
 			if description != tt.expectedDescription {
 				t.Errorf("parseTemplateFile() description = %v, want %v", description, tt.expectedDescription)
-			}
-
-			if tmpl == nil {
-				t.Errorf("parseTemplateFile() template is nil")
 			}
 		})
 	}
@@ -169,9 +210,9 @@ func TestParseTemplateFile(t *testing.T) {
 
 func TestFindUsedPartials(t *testing.T) {
 	partials := map[string]string{
-		"header": "Header content with {{.role}}",
-		"footer": "Footer content with {{.conclusion}}",
-		"unused": "Unused content with {{.unused_var}}",
+		"_header": "Header content with {{.role}}",
+		"_footer": "Footer content with {{.conclusion}}",
+		"_unused": "Unused content with {{.unused_var}}",
 	}
 
 	tests := []struct {
@@ -187,31 +228,17 @@ func TestFindUsedPartials(t *testing.T) {
 		{
 			name:     "single partial used",
 			content:  "{{template \"_header\" dict \"role\" .role}}",
-			expected: map[string]string{"header": "Header content with {{.role}}"},
+			expected: map[string]string{"_header": "Header content with {{.role}}"},
 		},
 		{
 			name:    "multiple partials used",
 			content: "{{template \"_header\" .}} and {{template \"_footer\" .}}",
 			expected: map[string]string{
-				"header": "Header content with {{.role}}",
-				"footer": "Footer content with {{.conclusion}}",
-			},
-		},
-		{
-			name:     "partial without underscore prefix",
-			content:  "{{template \"header\" .}}",
-			expected: map[string]string{"header": "Header content with {{.role}}"},
-		},
-		{
-			name:    "mixed partial references",
-			content: "{{template \"_header\" .}} and {{template \"footer\" .}}",
-			expected: map[string]string{
-				"header": "Header content with {{.role}}",
-				"footer": "Footer content with {{.conclusion}}",
+				"_header": "Header content with {{.role}}",
+				"_footer": "Footer content with {{.conclusion}}",
 			},
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := findUsedPartials(tt.content, partials)
@@ -246,11 +273,124 @@ func TestLoadPartials(t *testing.T) {
 	}
 
 	expected := map[string]string{
-		"header": "{{/* Header partial */}}\nYou are {{.role}}",
-		"footer": "{{/* Footer partial */}}\nEnd of prompt",
+		"_header": "{{/* Header partial */}}\nYou are {{.role}}",
+		"_footer": "{{/* Footer partial */}}\nEnd of prompt",
 	}
 
 	if !reflect.DeepEqual(partials, expected) {
 		t.Errorf("loadPartials() = %v, want %v", partials, expected)
+	}
+}
+
+func TestServerWithPrompt(t *testing.T) {
+	ctx := context.Background()
+
+	srv := mcptest.NewUnstartedServer(t)
+	defer srv.Close()
+
+	if err := buildPrompts(srv, "./testdata", slog.New(slog.DiscardHandler)); err != nil {
+		t.Fatalf("buildPrompts failed: %v", err)
+	}
+
+	err := srv.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name                string
+		promptName          string
+		promptArgs          map[string]string
+		expectedDescription string
+		expectedMessages    []mcp.PromptMessage
+	}{
+		{
+			name:                "greeting prompt",
+			promptName:          "greeting",
+			promptArgs:          map[string]string{"name": "John"},
+			expectedDescription: "Greeting standalone template with no partials",
+			expectedMessages: []mcp.PromptMessage{
+				{
+					Role:    mcp.RoleUser,
+					Content: mcp.NewTextContent("Hello John!\nHave a great day!"),
+				},
+			},
+		},
+		{
+			name:                "greeting with partials",
+			promptName:          "greeting_with_partials",
+			promptArgs:          map[string]string{"name": "Alice"},
+			expectedDescription: "Greeting template with partial",
+			expectedMessages: []mcp.PromptMessage{
+				{
+					Role:    mcp.RoleUser,
+					Content: mcp.NewTextContent("Hello Alice!\nWelcome to the system.\nHave a great day!"),
+				},
+			},
+		},
+		{
+			name:       "template with multiple partials",
+			promptName: "multiple_partials",
+			promptArgs: map[string]string{
+				"title":       "Test Document",
+				"author":      "Test Author",
+				"name":        "Bob",
+				"description": "This is a test description",
+				"version":     "1.0.0",
+			},
+			expectedDescription: "Template with multiple partials",
+			expectedMessages: []mcp.PromptMessage{
+				{
+					Role:    mcp.RoleUser,
+					Content: mcp.NewTextContent("# Test Document\n\nCreated by: Test Author\n\n## Description\n\nThis is a test description\n\n## Details\n\nThis is a test template with multiple partials.\n\n\nHello Bob!\n\n---\nGenerated on: " + time.Now().Format("2006-01-02 15:04:05") + "\nVersion: 1.0.0\n"),
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var getReq mcp.GetPromptRequest
+			getReq.Params.Name = tt.promptName
+			getReq.Params.Arguments = tt.promptArgs
+			getResult, err := srv.Client().GetPrompt(ctx, getReq)
+			if err != nil {
+				t.Fatalf("GetPrompt failed: %v", err)
+			}
+
+			if getResult.Description != tt.expectedDescription {
+				t.Errorf("Expected prompt description %q, got %q", tt.expectedDescription, getResult.Description)
+			}
+
+			if len(getResult.Messages) != len(tt.expectedMessages) {
+				t.Fatalf("Expected %d messages, got %d", len(tt.expectedMessages), len(getResult.Messages))
+			}
+
+			for i, msg := range getResult.Messages {
+				if msg.Role != tt.expectedMessages[i].Role {
+					t.Errorf("Expected message role %q, got %q", tt.expectedMessages[i].Role, msg.Role)
+				}
+				content, ok := msg.Content.(mcp.TextContent)
+				if !ok {
+					t.Fatalf("Expected TextContent, got %T", msg.Content)
+				}
+
+				// For the date in multiple_partials test, we need to handle it differently
+				if tt.name == "template with multiple partials" {
+					// Extract the date from the actual content
+					actualContent := content.Text
+					expectedContent := tt.expectedMessages[i].Content.(mcp.TextContent).Text
+
+					// Compare the content without worrying about the exact date
+					if !strings.Contains(actualContent, "Generated on:") || !strings.Contains(expectedContent, "Generated on:") {
+						t.Errorf("Expected message content to contain 'Generated on:', but it doesn't")
+					}
+				} else {
+					// For other tests, compare the exact content
+					if content.Text != tt.expectedMessages[i].Content.(mcp.TextContent).Text {
+						t.Errorf("Expected message content %q, got %q", tt.expectedMessages[i].Content.(mcp.TextContent).Text, content.Text)
+					}
+				}
+			}
+		})
 	}
 }

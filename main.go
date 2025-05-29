@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
+	"html/template"
 	"log"
 	"log/slog"
 	"os"
@@ -12,7 +14,6 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
-	"text/template"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -81,25 +82,17 @@ func runServer(promptsDir string, logFile string) error {
 	return nil
 }
 
-// dict creates a map from key-value pairs for template usage
-func dict(values ...interface{}) map[string]interface{} {
-	if len(values)%2 != 0 {
-		return nil
-	}
-	result := make(map[string]interface{})
-	for i := 0; i < len(values); i += 2 {
-		key, ok := values[i].(string)
-		if !ok {
-			return nil
-		}
-		result[key] = values[i+1]
-	}
-	return result
+type promptServer interface {
+	AddPrompt(prompt mcp.Prompt, handler server.PromptHandlerFunc)
 }
 
 // buildPrompts builds and registers prompts with the server
-func buildPrompts(s *server.MCPServer, promptsDir string, logger *slog.Logger) error {
-	// Load all partials first
+func buildPrompts(srv promptServer, promptsDir string, logger *slog.Logger) error {
+	_, err := parseAllPrompts(promptsDir)
+	if err != nil {
+		return fmt.Errorf("parse all prompts: %w", err)
+	}
+
 	partials, err := loadPartials(promptsDir)
 	if err != nil {
 		return fmt.Errorf("load partials: %w", err)
@@ -115,8 +108,8 @@ func buildPrompts(s *server.MCPServer, promptsDir string, logger *slog.Logger) e
 			filePath := filepath.Join(promptsDir, file.Name())
 
 			// Parse template and extract description
-			_, description, err := parseTemplateFile(filePath, partials)
-			if err != nil {
+			var description string
+			if description, err = extractPromptDescription(filePath); err != nil {
 				logger.Error("Error parsing template file", "file", filePath, "error", err)
 				continue
 			}
@@ -124,8 +117,8 @@ func buildPrompts(s *server.MCPServer, promptsDir string, logger *slog.Logger) e
 			promptName := strings.TrimSuffix(file.Name(), filepath.Ext(file.Name()))
 
 			// Extract template arguments by analyzing template source
-			args, err := extractTemplateArguments(filePath, partials)
-			if err != nil {
+			var args []string
+			if args, err = extractPromptArguments(filePath, partials); err != nil {
 				logger.Error("Error extracting template arguments", "file", filePath, "error", err)
 				continue
 			}
@@ -149,50 +142,8 @@ func buildPrompts(s *server.MCPServer, promptsDir string, logger *slog.Logger) e
 				promptOpts = append(promptOpts, mcp.WithArgument(promptArg, mcp.RequiredArgument()))
 			}
 
-			prompt := mcp.NewPrompt(promptName, promptOpts...)
-
-			promptHandler := func(
-				filePath string, description string, envArgs map[string]string, partials map[string]string,
-			) func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-				return func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-					// Re-parse template to get latest version
-					tmpl, _, readErr := parseTemplateFile(filePath, partials)
-					if readErr != nil {
-						return nil, fmt.Errorf("parse template file %s: %w", filePath, readErr)
-					}
-
-					// Prepare template data - make a flat map for easy access
-					data := make(map[string]interface{})
-					data["date"] = time.Now().Format("2006-01-02 15:04:05")
-
-					// Add environment variables
-					for arg, value := range envArgs {
-						data[arg] = value
-					}
-					// Add request arguments
-					for arg, value := range request.Params.Arguments {
-						data[arg] = value
-					}
-
-					// Execute template
-					var result strings.Builder
-					if err := tmpl.Execute(&result, data); err != nil {
-						return nil, fmt.Errorf("execute template: %w", err)
-					}
-
-					return mcp.NewGetPromptResult(
-						description,
-						[]mcp.PromptMessage{
-							mcp.NewPromptMessage(
-								mcp.RoleUser,
-								mcp.NewTextContent(result.String()),
-							),
-						},
-					), nil
-				}
-			}
-
-			s.AddPrompt(prompt, promptHandler(filePath, description, envArgs, partials))
+			srv.AddPrompt(mcp.NewPrompt(promptName, promptOpts...),
+				promptHandler(promptsDir, strings.TrimSuffix(file.Name(), ".tmpl"), description, envArgs))
 
 			logger.Info("Prompt registered",
 				"name", promptName,
@@ -222,8 +173,9 @@ func loadPartials(promptsDir string) (map[string]string, error) {
 				return nil, fmt.Errorf("read partial file %s: %w", filePath, err)
 			}
 
-			// Remove the _ prefix and .tmpl suffix to get the partial name
-			partialName := strings.TrimSuffix(strings.TrimPrefix(file.Name(), "_"), ".tmpl")
+			// Remove the .tmpl suffix to get the partial name
+			partialName := strings.TrimSuffix(file.Name(), ".tmpl")
+			//partialName = strings.TrimPrefix(partialName, "_")
 			partials[partialName] = string(content)
 		}
 	}
@@ -231,64 +183,42 @@ func loadPartials(promptsDir string) (map[string]string, error) {
 	return partials, nil
 }
 
-// parseTemplateFile reads and parses a template file, extracting description from comment
-func parseTemplateFile(filePath string, partials map[string]string) (*template.Template, string, error) {
+func extractPromptDescription(filePath string) (string, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, "", fmt.Errorf("read file: %w", err)
+		return "", fmt.Errorf("read file: %w", err)
 	}
 
-	contentStr := string(content)
-
-	// Extract description from first line comment
-	var description string
-	lines := strings.SplitN(contentStr, "\n", 2)
-	// TODO:
-	// 1) Support {{- /* comment */ -}} style comments
-	// 2) Support whitespace trimming around comments ({{- /* comment */ -}})
-	if len(lines) > 0 && strings.HasPrefix(strings.TrimSpace(lines[0]), "{{/*") && strings.HasSuffix(strings.TrimSpace(lines[0]), "*/}}") {
-		// Extract description from comment
-		comment := strings.TrimSpace(lines[0])
-		comment = strings.TrimPrefix(comment, "{{/*")
-		comment = strings.TrimSuffix(comment, "*/}}")
-		description = strings.TrimSpace(comment)
+	var firstLine string
+	if idx := bytes.IndexByte(content, '\n'); idx != -1 {
+		firstLine = string(content[:idx])
+	} else {
+		firstLine = string(content)
 	}
+	firstLine = strings.TrimSpace(firstLine)
 
-	// Create template with custom functions
-	tmpl := template.New(filepath.Base(filePath)).Funcs(template.FuncMap{
-		"dict": dict,
-		"add":  func(a, b int) int { return a + b },
-		"sub":  func(a, b int) int { return a - b },
-		"mul":  func(a, b int) int { return a * b },
-		"div": func(a, b int) int {
-			if b != 0 {
-				return a / b
-			}
-			return 0
-		},
-	})
-
-	// Add partials to template
-	for prtName, prtContent := range partials {
-		if _, err = tmpl.New(prtName).Parse(prtContent); err != nil {
-			return nil, "", fmt.Errorf("parse partial %s: %w", prtName, err)
+	for _, c := range [...][2]string{
+		{"{{/*", "*/}}"},
+		{"{{- /*", "*/}}"},
+		{"{{/*", "*/ -}}"},
+		{"{{- /*", "*/ -}}"},
+	} {
+		if strings.HasPrefix(firstLine, c[0]) && strings.HasSuffix(firstLine, c[1]) {
+			comment := firstLine
+			comment = strings.TrimPrefix(comment, c[0])
+			comment = strings.TrimSuffix(comment, c[1])
+			return strings.TrimSpace(comment), nil
 		}
 	}
 
-	// Parse main template
-	tmpl, err = tmpl.Parse(contentStr)
-	if err != nil {
-		return nil, "", fmt.Errorf("parse template: %w", err)
-	}
-
-	return tmpl, description, nil
+	return "", nil
 }
 
 var templateArgsRegex = regexp.MustCompile(`{{\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*}}`)
 
-// extractTemplateArguments analyzes template source to find field references,
+// extractPromptArguments analyzes template source to find field references,
 // including only partials that are actually used by the template
-func extractTemplateArguments(filePath string, partials map[string]string) ([]string, error) {
+func extractPromptArguments(filePath string, partials map[string]string) ([]string, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
@@ -297,28 +227,62 @@ func extractTemplateArguments(filePath string, partials map[string]string) ([]st
 	mainContent := string(content)
 
 	// Find which partials are actually used by this template
-	usedPartials := findUsedPartials(mainContent, partials)
+	usedPartials := make(map[string]string)
+	processedPartials := make(map[string]bool)
 
-	// Collect content from main template + only used partials
-	// TODO:
-	// 1) handle cyclic references gracefully (return error if cycle detected)
-	// 2) handle nested partials recursively on unlimited depth
+	// Helper function to recursively process partials with cycle detection
+	var processPartial func(content string, path []string) error
+	processPartial = func(content string, path []string) error {
+		// Find direct partials used by this content
+		directPartials := findUsedPartials(content, partials)
+
+		// Process each partial
+		for partialName, partialContent := range directPartials {
+			// Check for cycles
+			for _, ancestor := range path {
+				if ancestor == partialName {
+					cyclePath := append(path, partialName)
+					return fmt.Errorf("cyclic partial reference detected: %s", strings.Join(cyclePath, " -> "))
+				}
+			}
+
+			// Add to used partials if not already processed
+			if !processedPartials[partialName] {
+				usedPartials[partialName] = partialContent
+				processedPartials[partialName] = true
+
+				// Recursively process this partial's dependencies
+				newPath := append(append([]string{}, path...), partialName)
+				if err = processPartial(partialContent, newPath); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+
+	// Start processing from the main content
+	if err = processPartial(mainContent, []string{}); err != nil {
+		return nil, err
+	}
+
+	// Also need to analyze template calls with dict arguments like {{template "_header" dict "role" .role}}
+	// to extract arguments passed to partials
+	// This regex matches patterns like dict "key" .value or dict "key" .value "key2" .value2
+	dictArgRegex := regexp.MustCompile(`dict\s+"([^"]+)"\s+\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+"[^"]+"\s+\.([a-zA-Z_][a-zA-Z0-9_]*))*`)
+
+	// Collect content from main template + all used partials
 	allContent := mainContent
 	for _, partialContent := range usedPartials {
 		allContent += "\n" + partialContent
-		// Also check if used partials reference other partials (recursive)
-		nestedPartials := findUsedPartials(partialContent, partials)
-		for nestedName, nestedContent := range nestedPartials {
-			if _, alreadyIncluded := usedPartials[nestedName]; !alreadyIncluded {
-				allContent += "\n" + nestedContent
-				usedPartials[nestedName] = nestedContent
-			}
-		}
 	}
 
 	// Extract field references using regex
 	// Match patterns like {{.fieldname}} and {{ .fieldname }}
 	matches := templateArgsRegex.FindAllStringSubmatch(allContent, -1)
+
+	// Also extract dict arguments from template calls
+	dictMatches := dictArgRegex.FindAllStringSubmatch(allContent, -1)
 
 	// Use a map to deduplicate arguments and filter out built-in fields
 	argsMap := make(map[string]struct{})
@@ -326,12 +290,26 @@ func extractTemplateArguments(filePath string, partials map[string]string) ([]st
 		"date": {},
 	}
 
+	// Process regular template arguments
 	for _, match := range matches {
 		if len(match) > 1 {
 			fieldName := strings.ToLower(match[1]) // Normalize to lowercase
 			// Skip built-in fields
 			if _, isBuiltIn := builtInFields[fieldName]; !isBuiltIn {
 				argsMap[fieldName] = struct{}{}
+			}
+		}
+	}
+
+	// Process dict arguments in template calls
+	for _, match := range dictMatches {
+		for i := 2; i < len(match); i++ {
+			if match[i] != "" {
+				fieldName := strings.ToLower(match[i]) // Normalize to lowercase
+				// Skip built-in fields
+				if _, isBuiltIn := builtInFields[fieldName]; !isBuiltIn {
+					argsMap[fieldName] = struct{}{}
+				}
 			}
 		}
 	}
@@ -350,18 +328,13 @@ func findUsedPartials(content string, allPartials map[string]string) map[string]
 	usedPartials := make(map[string]string)
 
 	// Match template calls like {{template "partial_name" ...}} or {{template "_partial" ...}}
-	// This regex captures both quoted partial names and bare partial names
-	templateCallRegex := regexp.MustCompile(`{{\s*template\s+["']?([a-zA-Z_][a-zA-Z0-9_]*)["']?\s+[^}]*}}`)
+	// This regex captures partial names with or without underscore prefix
+	templateCallRegex := regexp.MustCompile(`{{\s*template\s+["']([a-zA-Z_][a-zA-Z0-9_]*)["']\s+[^}]*}}`)
 	matches := templateCallRegex.FindAllStringSubmatch(content, -1)
 
 	for _, match := range matches {
 		if len(match) > 1 {
-			partialName := match[1]
-			// Remove leading underscore if present (since we store partials without the underscore)
-			if strings.HasPrefix(partialName, "_") {
-				partialName = strings.TrimPrefix(partialName, "_")
-			}
-
+			partialName := match[1] // Get the name without the underscore prefix
 			// Check if this partial exists in our partials map
 			if partialContent, exists := allPartials[partialName]; exists {
 				usedPartials[partialName] = partialContent
@@ -370,4 +343,68 @@ func findUsedPartials(content string, allPartials map[string]string) map[string]
 	}
 
 	return usedPartials
+}
+
+func promptHandler(
+	promptsDir string, templateName string, description string, envArgs map[string]string,
+) func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	return func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		tmpl, err := parseAllPrompts(promptsDir)
+		if err != nil {
+			return nil, fmt.Errorf("parse all prompts: %w", err)
+		}
+
+		data := make(map[string]interface{})
+		data["date"] = time.Now().Format("2006-01-02 15:04:05")
+
+		for arg, value := range envArgs {
+			data[arg] = value
+		}
+		for arg, value := range request.Params.Arguments {
+			data[arg] = value
+		}
+
+		// Execute template
+		var result strings.Builder
+		if err := tmpl.ExecuteTemplate(&result, templateName, data); err != nil {
+			return nil, fmt.Errorf("execute template: %w", err)
+		}
+
+		return mcp.NewGetPromptResult(
+			description,
+			[]mcp.PromptMessage{
+				mcp.NewPromptMessage(
+					mcp.RoleUser,
+					mcp.NewTextContent(result.String()),
+				),
+			},
+		), nil
+	}
+}
+
+func parseAllPrompts(promptsDir string) (*template.Template, error) {
+	tmpl := template.New("").Funcs(template.FuncMap{
+		"dict": dict,
+	})
+	tmpl, err := tmpl.ParseGlob(promptsDir + "/*.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("parse template glob %q: %w", promptsDir+"/*.tmpl", err)
+	}
+	return tmpl, nil
+}
+
+// dict creates a map from key-value pairs for template usage
+func dict(values ...interface{}) map[string]interface{} {
+	if len(values)%2 != 0 {
+		return nil
+	}
+	result := make(map[string]interface{})
+	for i := 0; i < len(values); i += 2 {
+		key, ok := values[i].(string)
+		if !ok {
+			return nil
+		}
+		result[key] = values[i+1]
+	}
+	return result
 }

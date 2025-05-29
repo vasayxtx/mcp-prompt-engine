@@ -1,0 +1,9 @@
+{{/* Template with multiple partials */}}
+{{- define "multiple_partials" -}}
+{{template "_header" dict "title" .title "author" .author}}
+{{template "_content" dict "description" .description}}
+
+Hello {{.name}}!
+
+{{template "_footer" .}}
+{{- end -}}
