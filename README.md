@@ -7,6 +7,7 @@ It allows you to create reusable prompt templates with variable placeholders and
 
 - Load prompt templates from `.tmpl` files using Go's `text/template` syntax
 - Support for template variables using `{{.variable_name}}` syntax
+- Automatic detection of variables used within `{{if .condition}}` blocks as prompt arguments
 - Template partials support (files with `_` prefix for reusable components)
 - Template comment-based descriptions (`{{/* description */}}` on first line)
 - Environment variable injection into prompts
@@ -82,7 +83,7 @@ The server provides these built-in template functions:
 Here's a complete example of a code review prompt template (`code_review.tmpl`):
 
 ```go
-{{/* Perform a code review for the provided code */}}
+{{/* Perform a code review. Optionally include urgency. Args: language, project_root, src_path, [urgency_level], [context] */}}
 {{template "_header" dict "role" "software developer" "task" "performing a thorough code review" "date" .date "context" .context}}
 
 Here are the details of the code you need to review:
@@ -101,6 +102,10 @@ File or Directory for Review:
 <review_path>
 {{.src_path}}
 </review_path>
+
+{{if .urgency_level}}
+Urgency: Please address this review with {{.urgency_level}} urgency.
+{{end}}
 
 Please conduct a comprehensive code review focusing on the following aspects:
 1. Code quality
