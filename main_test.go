@@ -118,6 +118,30 @@ func TestExtractTemplateArguments(t *testing.T) {
 			description: "Template with deeply nested partials",
 			shouldError: false,
 		},
+		{
+			name:        "template with if condition",
+			content:     "{{/* Template with if condition */}}\n{{if .show_greeting}}Hello {{.name}}{{end}}\n{{if .show_project}}Project: {{.project}}{{end}}",
+			partials:    map[string]string{},
+			expected:    []string{"show_greeting", "name", "show_project", "project"},
+			description: "Template with if condition",
+			shouldError: false,
+		},
+		{
+			name:        "template with nested if and else",
+			content:     "{{/* Template with nested if */}}\n{{if .has_user}}{{if .user_active}}Active user: {{.username}}{{else}}Inactive user: {{.username}}{{end}}{{else}}No user{{end}}",
+			partials:    map[string]string{},
+			expected:    []string{"has_user", "user_active", "username"},
+			description: "Template with nested if",
+			shouldError: false,
+		},
+		{
+			name:        "template with range and if",
+			content:     "{{/* Template with range and if */}}\n{{range .items}}{{if .enabled}}Item: {{.name}}{{end}}{{end}}",
+			partials:    map[string]string{},
+			expected:    []string{"items", "enabled", "name"},
+			description: "Template with range and if",
+			shouldError: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -331,6 +355,20 @@ func TestRenderTemplate(t *testing.T) {
 			shouldError:    false,
 		},
 		{
+			name:         "template with if conditions",
+			templateName: "if_template",
+			envVars: map[string]string{
+				"SHOW_GREETING": "1",
+				"NAME":          "Alice",
+				"SHOW_PROJECT":  "1", 
+				"PROJECT":       "MCP Server",
+				"DEBUG_MODE":    "",
+				"DEBUG_INFO":    "",
+			},
+			expectedOutput: "Hello Alice!\nWorking on: MCP Server\nDone.",
+			shouldError:    false,
+		},
+		{
 			name:           "non-existent template",
 			templateName:   "non_existent_template",
 			envVars:        map[string]string{},
@@ -434,6 +472,25 @@ func TestServerWithPrompt(t *testing.T) {
 				{
 					Role:    mcp.RoleUser,
 					Content: mcp.NewTextContent("# Test Document\nCreated by: Test Author\n## Description\nThis is a test description\n## Details\nThis is a test template with multiple partials.\nHello Bob!\nVersion: 1.0.0"),
+				},
+			},
+		},
+		{
+			name:       "if template",
+			promptName: "if_template",
+			promptArgs: map[string]string{
+				"show_greeting": "1",
+				"name":          "Bob",
+				"show_project":  "1",
+				"project":       "Test Project",
+				"debug_mode":    "",
+				"debug_info":    "",
+			},
+			expectedDescription: "Template with if conditions for testing",
+			expectedMessages: []mcp.PromptMessage{
+				{
+					Role:    mcp.RoleUser,
+					Content: mcp.NewTextContent("Hello Bob!\nWorking on: Test Project\nDone."),
 				},
 			},
 		},
