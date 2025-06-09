@@ -93,6 +93,14 @@ func TestExtractTemplateArguments(t *testing.T) {
 			shouldError: false,
 		},
 		{
+			name:        "argument in if statement",
+			content:     "{{/* Template with if statement */}}\\n{{if .show_details}}Details: {{.details_text}}{{end}}\\nAlways show: {{.always_visible}}",
+			partials:    map[string]string{},
+			expected:    []string{"show_details", "details_text", "always_visible"},
+			description: "Template with if statement",
+			shouldError: false,
+		},
+		{
 			name:    "cyclic partial references",
 			content: "{{/* Template with cyclic partials */}}\n{{template \"_a\" .}}\nMain content: {{.main}}",
 			partials: map[string]string{
@@ -331,6 +339,26 @@ func TestRenderTemplate(t *testing.T) {
 			shouldError:    false,
 		},
 		{
+			name:         "conditional greeting, show extra message true",
+			templateName: "conditional_greeting",
+			envVars: map[string]string{
+				"NAME":                 "Alice",
+				"SHOW_EXTRA_MESSAGE": "true",
+			},
+			expectedOutput: "Hello Alice!\nThis is an extra message just for you.\nHave a good day.",
+			shouldError:    false,
+		},
+		{
+			name:         "conditional greeting, show extra message false",
+			templateName: "conditional_greeting",
+			envVars: map[string]string{
+				"NAME":                 "Bob",
+				"SHOW_EXTRA_MESSAGE": "", 
+			},
+			expectedOutput: "Hello Bob!\nHave a good day.",
+			shouldError:    false,
+		},
+		{
 			name:           "non-existent template",
 			templateName:   "non_existent_template",
 			envVars:        map[string]string{},
@@ -434,6 +462,36 @@ func TestServerWithPrompt(t *testing.T) {
 				{
 					Role:    mcp.RoleUser,
 					Content: mcp.NewTextContent("# Test Document\nCreated by: Test Author\n## Description\nThis is a test description\n## Details\nThis is a test template with multiple partials.\nHello Bob!\nVersion: 1.0.0"),
+				},
+			},
+		},
+		{
+			name:       "conditional greeting, show extra true",
+			promptName: "conditional_greeting",
+			promptArgs: map[string]string{
+				"name":                 "Carlos",
+				"show_extra_message": "true",
+			},
+			expectedDescription: "Conditional greeting template",
+			expectedMessages: []mcp.PromptMessage{
+				{
+					Role:    mcp.RoleUser,
+					Content: mcp.NewTextContent("Hello Carlos!\nThis is an extra message just for you.\nHave a good day."),
+				},
+			},
+		},
+		{
+			name:       "conditional greeting, show extra false",
+			promptName: "conditional_greeting",
+			promptArgs: map[string]string{
+				"name":                 "Diana",
+				"show_extra_message": "", 
+			},
+			expectedDescription: "Conditional greeting template",
+			expectedMessages: []mcp.PromptMessage{
+				{
+					Role:    mcp.RoleUser,
+					Content: mcp.NewTextContent("Hello Diana!\nHave a good day."),
 				},
 			},
 		},
