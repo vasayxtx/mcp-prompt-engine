@@ -1,0 +1,42 @@
+name: Test
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    strategy:
+      matrix:
+        go: [ '1.24' ]
+      fail-fast: true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go ${{ matrix.go }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Run tests with coverage
+        run: go test -race -cover -coverprofile="coverage.out" -covermode=atomic ./...
+
+      - name: Check coverage
+        run: |
+          real_coverage=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
+          min_coverage=$(cat min-coverage)
+          if (( $(echo "$real_coverage < $min_coverage" | bc -l) )); then
+            echo "Coverage check failed: $real_coverage% is lower than the required $min_coverage%"
+            exit 1
+          else
+            echo "Coverage check passed: $real_coverage% meets the minimum requirement of $min_coverage%"
+          fi
