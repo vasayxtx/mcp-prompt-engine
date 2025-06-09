@@ -57,22 +57,23 @@ func main() {
 		return
 	}
 
-	logWriter := os.Stdout
-	if *logFile != "" {
-		file, err := os.OpenFile(*logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-		if err != nil {
-			log.Fatal(fmt.Errorf("open log file: %w", err))
-		}
-		logWriter = file
-	}
-	logger := slog.New(slog.NewTextHandler(logWriter, nil))
-
-	if err := runServer(*promptsDir, logger); err != nil {
+	if err := runServer(*promptsDir, *logFile); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func runServer(promptsDir string, logger *slog.Logger) error {
+func runServer(promptsDir string, logFile string) error {
+	logWriter := os.Stdout
+	if logFile != "" {
+		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			return fmt.Errorf("open log file: %w", err)
+		}
+		defer func() { _ = file.Close() }()
+		logWriter = file
+	}
+	logger := slog.New(slog.NewTextHandler(logWriter, nil))
+
 	srvHooks := &server.Hooks{}
 	srvHooks.AddBeforeGetPrompt(func(ctx context.Context, id any, message *mcp.GetPromptRequest) {
 		logger.Info("Received prompt request",
@@ -123,7 +124,7 @@ func buildPrompts(srv promptServer, promptsDir string, logger *slog.Logger) erro
 
 	files, err := os.ReadDir(promptsDir)
 	if err != nil {
-		return fmt.Errorf("error reading prompts directory: %v", err)
+		return fmt.Errorf("read prompts directory: %w", err)
 	}
 
 	for _, file := range files {
@@ -399,9 +400,9 @@ func parseAllPrompts(promptsDir string) (*template.Template, error) {
 	tmpl := template.New("").Funcs(template.FuncMap{
 		"dict": dict,
 	})
-	tmpl, err := tmpl.ParseGlob(promptsDir + "/*" + templateExt)
+	tmpl, err := tmpl.ParseGlob(filepath.Join(promptsDir, "*"+templateExt))
 	if err != nil {
-		return nil, fmt.Errorf("parse template glob %q: %w", promptsDir+"/*"+templateExt, err)
+		return nil, fmt.Errorf("parse template glob %q: %w", filepath.Join(promptsDir, "*"+templateExt), err)
 	}
 	return tmpl, nil
 }
