@@ -34,6 +34,9 @@ var (
 
 	// dictArgRegex regex matches patterns like dict "key" .value or dict "key" .value "key2" .value2
 	dictArgRegex = regexp.MustCompile(`dict\s+"([^"]+)"\s+\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+"[^"]+"\s+\.([a-zA-Z_][a-zA-Z0-9_]*))*`)
+
+	// ifArgRegex regex matches patterns like {{if .variable ...}}
+	ifArgRegex = regexp.MustCompile(`{{\s*if\s+(?:[^}]*\s)?\.([a-zA-Z_][a-zA-Z0-9_]*)\s*.*?}}`)
 )
 
 func main() {
@@ -296,6 +299,9 @@ func extractPromptArguments(filePath string, partials map[string]string) ([]stri
 	// Match patterns like {{.fieldname}} and {{ .fieldname }}
 	matches := templateArgsRegex.FindAllStringSubmatch(allContent, -1)
 
+	// Extract arguments from if statements {{if .field}}
+	ifMatches := ifArgRegex.FindAllStringSubmatch(allContent, -1)
+
 	// Also extract dict arguments from template calls like {{template "partial_name" dict "key" .value "key2" .value2}}
 	dictMatches := dictArgRegex.FindAllStringSubmatch(allContent, -1)
 
@@ -308,6 +314,17 @@ func extractPromptArguments(filePath string, partials map[string]string) ([]stri
 	// Process regular template arguments
 	for _, match := range matches {
 		if len(match) > 1 {
+			fieldName := strings.ToLower(match[1]) // Normalize to lowercase
+			// Skip built-in fields
+			if _, isBuiltIn := builtInFields[fieldName]; !isBuiltIn {
+				argsMap[fieldName] = struct{}{}
+			}
+		}
+	}
+
+	// Extract arguments from if statements
+	for _, match := range ifMatches {
+		if len(match) > 1 && match[1] != "" {
 			fieldName := strings.ToLower(match[1]) // Normalize to lowercase
 			// Skip built-in fields
 			if _, isBuiltIn := builtInFields[fieldName]; !isBuiltIn {
@@ -380,8 +397,17 @@ func promptHandler(
 
 		// Execute template
 		var result strings.Builder
-		if err := tmpl.ExecuteTemplate(&result, templateName, data); err != nil {
-			return nil, fmt.Errorf("execute template: %w", err)
+		var actualTemplateName string
+		if tmpl.Lookup(templateName) != nil { // Try base name first
+			actualTemplateName = templateName
+		} else if tmpl.Lookup(templateName + templateExt) != nil { // Then try base name + .tmpl
+			actualTemplateName = templateName + templateExt
+		} else {
+			return nil, fmt.Errorf("template %q or %q not found in set after parsing %s", templateName, templateName+templateExt, promptsDir)
+		}
+
+		if err := tmpl.ExecuteTemplate(&result, actualTemplateName, data); err != nil {
+			return nil, fmt.Errorf("execute template %q: %w", actualTemplateName, err)
 		}
 
 		return mcp.NewGetPromptResult(
@@ -397,10 +423,11 @@ func promptHandler(
 }
 
 func parseAllPrompts(promptsDir string) (*template.Template, error) {
-	tmpl := template.New("").Funcs(template.FuncMap{
+	tmpl := template.New("base").Funcs(template.FuncMap{
 		"dict": dict,
 	})
-	tmpl, err := tmpl.ParseGlob(filepath.Join(promptsDir, "*"+templateExt))
+	var err error
+	tmpl, err = tmpl.ParseGlob(filepath.Join(promptsDir, "*"+templateExt))
 	if err != nil {
 		return nil, fmt.Errorf("parse template glob %q: %w", filepath.Join(promptsDir, "*"+templateExt), err)
 	}
@@ -431,9 +458,14 @@ func renderTemplate(w io.Writer, promptsDir string, templateName string) error {
 		return fmt.Errorf("parse all prompts: %w", err)
 	}
 
-	// Check if the requested template exists
-	if tmpl.Lookup(templateName) == nil {
-		return fmt.Errorf("template %q not found", templateName)
+	// Determine the actual template name to use for execution
+	var actualTemplateName string
+	if tmpl.Lookup(templateName) != nil { // Try base name first (e.g., "greeting" for greeting.tmpl with {{define "greeting"}})
+		actualTemplateName = templateName
+	} else if tmpl.Lookup(templateName + templateExt) != nil { // Then try base name + .tmpl (e.g., "conditional_greeting.tmpl")
+		actualTemplateName = templateName + templateExt
+	} else {
+		return fmt.Errorf("template %q or %q not found in parsed templates", templateName, templateName+templateExt)
 	}
 
 	// Load partials to extract arguments
@@ -442,14 +474,11 @@ func renderTemplate(w io.Writer, promptsDir string, templateName string) error {
 		return fmt.Errorf("load partials: %w", err)
 	}
 
-	// Extract template arguments
-	filePath := filepath.Join(promptsDir, templateName)
-	if !strings.HasSuffix(filePath, templateExt) {
-		filePath += templateExt
-	}
+	// Extract template arguments. Assumes templateName is the base name for file path construction.
+	filePath := filepath.Join(promptsDir, templateName+templateExt) 
 	args, err := extractPromptArguments(filePath, partials)
 	if err != nil {
-		return fmt.Errorf("extract template arguments: %w", err)
+		return fmt.Errorf("extract template arguments from %s: %w", filePath, err)
 	}
 
 	// Create data map with environment variables
@@ -469,7 +498,7 @@ func renderTemplate(w io.Writer, promptsDir string, templateName string) error {
 
 	// Execute template
 	var result bytes.Buffer
-	if err = tmpl.ExecuteTemplate(&result, templateName, data); err != nil {
+	if err = tmpl.ExecuteTemplate(&result, actualTemplateName, data); err != nil {
 		return fmt.Errorf("execute template: %w", err)
 	}
 	_, err = w.Write(result.Bytes())
