@@ -27,16 +27,5 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
 
-      - name: Run tests with coverage
-        run: go test -race -cover -coverprofile="coverage.out" -covermode=atomic ./...
-
-      - name: Check coverage
-        run: |
-          real_coverage=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
-          min_coverage=$(cat min-coverage)
-          if (( $(echo "$real_coverage < $min_coverage" | bc -l) )); then
-            echo "Coverage check failed: $real_coverage% is lower than the required $min_coverage%"
-            exit 1
-          else
-            echo "Coverage check passed: $real_coverage% meets the minimum requirement of $min_coverage%"
-          fi
+      - name: Run tests
+        run: make test
