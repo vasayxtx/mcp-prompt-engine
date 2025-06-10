@@ -118,6 +118,30 @@ func TestExtractTemplateArguments(t *testing.T) {
 			description: "Template with deeply nested partials",
 			shouldError: false,
 		},
+		{
+			name:        "if statement with variable",
+			content:     "{{/* Template with if statement */}}\n{{if .enabled}}Feature is enabled{{end}}",
+			partials:    map[string]string{},
+			expected:    []string{"enabled"},
+			description: "Template with if statement",
+			shouldError: false,
+		},
+		{
+			name:        "if statement with multiple conditions",
+			content:     "{{/* Template with multiple if statements */}}\n{{if .debug_mode}}Debug: {{.debug_info}}{{end}}\n{{if .production}}Production: {{.version}}{{end}}",
+			partials:    map[string]string{},
+			expected:    []string{"debug_mode", "debug_info", "production", "version"},
+			description: "Template with multiple if statements",
+			shouldError: false,
+		},
+		{
+			name:        "if statement in partials",
+			content:     "{{/* Template with if in partials */}}\n{{template \"_conditional\" dict \"show_details\" .show_details \"details\" .details}}",
+			partials:    map[string]string{"_conditional": "{{if .show_details}}Details: {{.details}}{{end}}"},
+			expected:    []string{"show_details", "details"},
+			description: "Template with if in partials",
+			shouldError: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -337,6 +361,15 @@ func TestRenderTemplate(t *testing.T) {
 			expectedOutput: "",
 			shouldError:    true,
 		},
+		{
+			name:         "template with if statement",
+			templateName: "conditional_template",
+			envVars: map[string]string{
+				"ENABLED": "true",
+			},
+			expectedOutput: "Feature is enabled",
+			shouldError:    false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -434,6 +467,20 @@ func TestServerWithPrompt(t *testing.T) {
 				{
 					Role:    mcp.RoleUser,
 					Content: mcp.NewTextContent("# Test Document\nCreated by: Test Author\n## Description\nThis is a test description\n## Details\nThis is a test template with multiple partials.\nHello Bob!\nVersion: 1.0.0"),
+				},
+			},
+		},
+		{
+			name:       "template with if statement",
+			promptName: "conditional_template",
+			promptArgs: map[string]string{
+				"enabled": "true",
+			},
+			expectedDescription: "Template with conditional logic",
+			expectedMessages: []mcp.PromptMessage{
+				{
+					Role:    mcp.RoleUser,
+					Content: mcp.NewTextContent("Feature is enabled"),
 				},
 			},
 		},

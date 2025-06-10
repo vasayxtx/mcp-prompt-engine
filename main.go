@@ -34,6 +34,9 @@ var (
 
 	// dictArgRegex regex matches patterns like dict "key" .value or dict "key" .value "key2" .value2
 	dictArgRegex = regexp.MustCompile(`dict\s+"([^"]+)"\s+\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+"[^"]+"\s+\.([a-zA-Z_][a-zA-Z0-9_]*))*`)
+
+	// ifArgsRegex regex matches patterns like {{if .variable}} or {{ if .variable }}
+	ifArgsRegex = regexp.MustCompile(`{{\s*if\s+\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*}}`)
 )
 
 func main() {
@@ -299,6 +302,9 @@ func extractPromptArguments(filePath string, partials map[string]string) ([]stri
 	// Also extract dict arguments from template calls like {{template "partial_name" dict "key" .value "key2" .value2}}
 	dictMatches := dictArgRegex.FindAllStringSubmatch(allContent, -1)
 
+	// Extract if statement arguments like {{if .variable}}
+	ifMatches := ifArgsRegex.FindAllStringSubmatch(allContent, -1)
+
 	// Use a map to deduplicate arguments and filter out built-in fields
 	argsMap := make(map[string]struct{})
 	builtInFields := map[string]struct{}{
@@ -325,6 +331,17 @@ func extractPromptArguments(filePath string, partials map[string]string) ([]stri
 				if _, isBuiltIn := builtInFields[fieldName]; !isBuiltIn {
 					argsMap[fieldName] = struct{}{}
 				}
+			}
+		}
+	}
+
+	// Process if statement arguments
+	for _, match := range ifMatches {
+		if len(match) > 1 {
+			fieldName := strings.ToLower(match[1]) // Normalize to lowercase
+			// Skip built-in fields
+			if _, isBuiltIn := builtInFields[fieldName]; !isBuiltIn {
+				argsMap[fieldName] = struct{}{}
 			}
 		}
 	}
