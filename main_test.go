@@ -118,6 +118,22 @@ func TestExtractTemplateArguments(t *testing.T) {
 			description: "Template with deeply nested partials",
 			shouldError: false,
 		},
+		{
+			name:        "conditional arguments",
+			content:     "{{if .condition}}Hello {{.name}}{{end}}",
+			partials:    map[string]string{},
+			expected:    []string{"condition", "name"},
+			description: "Conditional arguments",
+			shouldError: false,
+		},
+		{
+			name:        "conditional argument in partial",
+			content:     "{{template \"_cond_partial\" .}}",
+			partials:    map[string]string{"cond_partial": "{{if .show_message}}Message: {{.message_text}}{{end}}"},
+			expected:    []string{"show_message", "message_text"},
+			description: "Conditional argument in partial",
+			shouldError: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -337,6 +353,34 @@ func TestRenderTemplate(t *testing.T) {
 			expectedOutput: "",
 			shouldError:    true,
 		},
+		{
+			name: "conditional greeting - show greeting only",
+			templateName: "conditional_greeting",
+			envVars:      map[string]string{"NAME": "Tester", "SHOW_GREETING": "true", "SHOW_FAREWELL": "false"},
+			expectedOutput: "Hello Tester!",
+			shouldError:  false,
+		},
+		{
+			name: "conditional greeting - show farewell only",
+			templateName: "conditional_greeting",
+			envVars:      map[string]string{"NAME": "Tester", "SHOW_GREETING": "false", "SHOW_FAREWELL": "true"},
+			expectedOutput: "Goodbye Tester!",
+			shouldError:  false,
+		},
+		{
+			name: "conditional greeting - show both",
+			templateName: "conditional_greeting",
+			envVars:      map[string]string{"NAME": "Tester", "SHOW_GREETING": "true", "SHOW_FAREWELL": "true"},
+			expectedOutput: "Hello Tester!\nGoodbye Tester!",
+			shouldError:  false,
+		},
+		{
+			name: "conditional greeting - show none",
+			templateName: "conditional_greeting",
+			envVars:      map[string]string{"NAME": "Tester", "SHOW_GREETING": "false", "SHOW_FAREWELL": "false"},
+			expectedOutput: "",
+			shouldError:  false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -434,6 +478,30 @@ func TestServerWithPrompt(t *testing.T) {
 				{
 					Role:    mcp.RoleUser,
 					Content: mcp.NewTextContent("# Test Document\nCreated by: Test Author\n## Description\nThis is a test description\n## Details\nThis is a test template with multiple partials.\nHello Bob!\nVersion: 1.0.0"),
+				},
+			},
+		},
+		{
+			name:       "conditional greeting - show greeting",
+			promptName: "conditional_greeting",
+			promptArgs: map[string]string{"name": "CondUser", "show_greeting": "true", "show_farewell": "false"},
+			expectedDescription: "Conditional greeting template",
+			expectedMessages: []mcp.PromptMessage{
+				{
+					Role:    mcp.RoleUser,
+					Content: mcp.NewTextContent("Hello CondUser!"),
+				},
+			},
+		},
+		{
+			name:       "conditional greeting - show farewell",
+			promptName: "conditional_greeting",
+			promptArgs: map[string]string{"name": "CondUser", "show_greeting": "false", "show_farewell": "true"},
+			expectedDescription: "Conditional greeting template",
+			expectedMessages: []mcp.PromptMessage{
+				{
+					Role:    mcp.RoleUser,
+					Content: mcp.NewTextContent("Goodbye CondUser!"),
 				},
 			},
 		},

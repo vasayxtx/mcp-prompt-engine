@@ -1,0 +1,5 @@
+{{/* Conditional greeting template */}}
+{{define "conditional_greeting"}}
+{{if .show_greeting}}Hello {{.name}}!{{end}}
+{{if .show_farewell}}Goodbye {{.name}}!{{end}}
+{{end}}

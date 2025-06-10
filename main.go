@@ -34,6 +34,10 @@ var (
 
 	// dictArgRegex regex matches patterns like dict "key" .value or dict "key" .value "key2" .value2
 	dictArgRegex = regexp.MustCompile(`dict\s+"([^"]+)"\s+\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+"[^"]+"\s+\.([a-zA-Z_][a-zA-Z0-9_]*))*`)
+
+	// ifConditionArgRegex regex matches patterns like {{if .variable}}, {{with .variable}}, {{range .variable}}
+	// This is specifically for variables used directly in the condition like {{if .myVar}}
+	ifConditionArgRegex = regexp.MustCompile(`{{\s*(?:if|with|range)\s+\.([a-zA-Z_][a-zA-Z0-9_]*)[^}]*?}}`)
 )
 
 func main() {
@@ -299,6 +303,9 @@ func extractPromptArguments(filePath string, partials map[string]string) ([]stri
 	// Also extract dict arguments from template calls like {{template "partial_name" dict "key" .value "key2" .value2}}
 	dictMatches := dictArgRegex.FindAllStringSubmatch(allContent, -1)
 
+	// Extract arguments from if/with/range conditions like {{if .variable}} or {{range .items}}
+	ifCondMatches := ifConditionArgRegex.FindAllStringSubmatch(allContent, -1)
+
 	// Use a map to deduplicate arguments and filter out built-in fields
 	argsMap := make(map[string]struct{})
 	builtInFields := map[string]struct{}{
@@ -329,6 +336,17 @@ func extractPromptArguments(filePath string, partials map[string]string) ([]stri
 		}
 	}
 
+	// Process arguments from if/with/range conditions
+	for _, match := range ifCondMatches {
+		if len(match) > 1 {
+			fieldName := strings.ToLower(match[1]) // Normalize to lowercase
+			// Skip built-in fields
+			if _, isBuiltIn := builtInFields[fieldName]; !isBuiltIn {
+				argsMap[fieldName] = struct{}{}
+			}
+		}
+	}
+
 	// Convert map keys to slice
 	args := make([]string, 0, len(argsMap))
 	for arg := range argsMap {
@@ -348,10 +366,24 @@ func findUsedPartials(content string, allPartials map[string]string) map[string]
 
 	for _, match := range matches {
 		if len(match) > 1 {
-			partialName := match[1] // Get the name without the underscore prefix
-			// Check if this partial exists in our partials map
-			if partialContent, exists := allPartials[partialName]; exists {
-				usedPartials[partialName] = partialContent
+			nameInTemplate := match[1] // This is the name as used in the template call, e.g., "_header" or "header"
+			var partialContent string
+			var exists bool
+
+			// Attempt to find the partial using the name as it appears in the template
+			partialContent, exists = allPartials[nameInTemplate]
+
+			// If not found and the name in the template starts with an underscore,
+			// try looking it up without the underscore (as loadPartials stores them).
+			if !exists && strings.HasPrefix(nameInTemplate, "_") {
+				trimmedName := strings.TrimPrefix(nameInTemplate, "_")
+				partialContent, exists = allPartials[trimmedName]
+			}
+
+			if exists {
+				// Store in usedPartials using the nameInTemplate key.
+				// This is important for cycle detection in extractPromptArguments, which uses the path of template calls.
+				usedPartials[nameInTemplate] = partialContent
 			}
 		}
 	}
@@ -376,6 +408,18 @@ func promptHandler(
 		}
 		for arg, value := range request.Params.Arguments {
 			data[arg] = value
+		}
+
+		// Convert string "true"/"false" to boolean for template logic
+		for k, v := range data {
+			if s, ok := v.(string); ok {
+				lowerS := strings.ToLower(s)
+				if lowerS == "true" {
+					data[k] = true
+				} else if lowerS == "false" {
+					data[k] = false
+				}
+			}
 		}
 
 		// Execute template
@@ -464,6 +508,18 @@ func renderTemplate(w io.Writer, promptsDir string, templateName string) error {
 			data[arg] = envValue
 		} else {
 			data[arg] = "{{ " + arg + " }}"
+		}
+	}
+
+	// Convert string "true"/"false" to boolean for template logic
+	for k, v := range data {
+		if s, ok := v.(string); ok {
+			lowerS := strings.ToLower(s)
+			if lowerS == "true" {
+				data[k] = true
+			} else if lowerS == "false" {
+				data[k] = false
+			}
 		}
 	}
 
