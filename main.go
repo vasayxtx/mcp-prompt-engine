@@ -29,6 +29,9 @@ var (
 	// templateArgsRegex regex matches patterns like {{.fieldname}} or {{ .fieldname }}
 	templateArgsRegex = regexp.MustCompile(`{{\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*}}`)
 
+	// ifArgsRegex regex matches patterns like {{if .fieldname}} or {{- if .fieldname -}}
+	ifArgsRegex = regexp.MustCompile(`{{\s*-?\s*if\s+\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*-?\s*}}`)
+
 	// templateCallRegex regex matches patterns like {{template "partial_name" ...}} or {{template "_partial" ...}}
 	templateCallRegex = regexp.MustCompile(`{{\s*template\s+["']([a-zA-Z_][a-zA-Z0-9_]*)["']\s+[^}]*}}`)
 
@@ -296,6 +299,9 @@ func extractPromptArguments(filePath string, partials map[string]string) ([]stri
 	// Match patterns like {{.fieldname}} and {{ .fieldname }}
 	matches := templateArgsRegex.FindAllStringSubmatch(allContent, -1)
 
+	// Match patterns like {{if .fieldname}} and {{- if .fieldname -}}
+	ifMatches := ifArgsRegex.FindAllStringSubmatch(allContent, -1)
+
 	// Also extract dict arguments from template calls like {{template "partial_name" dict "key" .value "key2" .value2}}
 	dictMatches := dictArgRegex.FindAllStringSubmatch(allContent, -1)
 
@@ -308,9 +314,22 @@ func extractPromptArguments(filePath string, partials map[string]string) ([]stri
 	// Process regular template arguments
 	for _, match := range matches {
 		if len(match) > 1 {
-			fieldName := strings.ToLower(match[1]) // Normalize to lowercase
+			fieldName := match[1] // Preserve original case
+			fieldNameLower := strings.ToLower(fieldName)
 			// Skip built-in fields
-			if _, isBuiltIn := builtInFields[fieldName]; !isBuiltIn {
+			if _, isBuiltIn := builtInFields[fieldNameLower]; !isBuiltIn {
+				argsMap[fieldName] = struct{}{}
+			}
+		}
+	}
+
+	// Process if statement arguments
+	for _, match := range ifMatches {
+		if len(match) > 1 {
+			fieldName := match[1] // Preserve original case
+			fieldNameLower := strings.ToLower(fieldName)
+			// Skip built-in fields
+			if _, isBuiltIn := builtInFields[fieldNameLower]; !isBuiltIn {
 				argsMap[fieldName] = struct{}{}
 			}
 		}
@@ -320,9 +339,10 @@ func extractPromptArguments(filePath string, partials map[string]string) ([]stri
 	for _, match := range dictMatches {
 		for i := 2; i < len(match); i++ {
 			if match[i] != "" {
-				fieldName := strings.ToLower(match[i]) // Normalize to lowercase
+				fieldName := match[i] // Preserve original case
+				fieldNameLower := strings.ToLower(fieldName)
 				// Skip built-in fields
-				if _, isBuiltIn := builtInFields[fieldName]; !isBuiltIn {
+				if _, isBuiltIn := builtInFields[fieldNameLower]; !isBuiltIn {
 					argsMap[fieldName] = struct{}{}
 				}
 			}
@@ -372,10 +392,24 @@ func promptHandler(
 		data["date"] = time.Now().Format("2006-01-02 15:04:05")
 
 		for arg, value := range envArgs {
-			data[arg] = value
+			// Convert "true"/"false" string values to actual booleans for conditional evaluation
+			if strings.ToLower(value) == "true" {
+				data[arg] = true
+			} else if strings.ToLower(value) == "false" {
+				data[arg] = false
+			} else {
+				data[arg] = value
+			}
 		}
 		for arg, value := range request.Params.Arguments {
-			data[arg] = value
+			// Convert "true"/"false" string values to actual booleans for conditional evaluation
+			if strings.ToLower(value) == "true" {
+				data[arg] = true
+			} else if strings.ToLower(value) == "false" {
+				data[arg] = false
+			} else {
+				data[arg] = value
+			}
 		}
 
 		// Execute template
@@ -461,7 +495,14 @@ func renderTemplate(w io.Writer, promptsDir string, templateName string) error {
 		// Convert arg to TITLE_CASE for env var
 		envVarName := strings.ToUpper(arg)
 		if envValue, exists := os.LookupEnv(envVarName); exists {
-			data[arg] = envValue
+			// Convert "true"/"false" string values to actual booleans for conditional evaluation
+			if strings.ToLower(envValue) == "true" {
+				data[arg] = true
+			} else if strings.ToLower(envValue) == "false" {
+				data[arg] = false
+			} else {
+				data[arg] = envValue
+			}
 		} else {
 			data[arg] = "{{ " + arg + " }}"
 		}

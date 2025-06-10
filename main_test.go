@@ -45,6 +45,30 @@ func TestExtractTemplateArguments(t *testing.T) {
 			shouldError: false,
 		},
 		{
+			name:        "if statement with variable",
+			content:     "{{/* Template with if statement */}}\nHello{{if .name}} {{.name}}{{end}}!",
+			partials:    map[string]string{},
+			expected:    []string{"name"},
+			description: "Template with if statement",
+			shouldError: false,
+		},
+		{
+			name:        "nested if statements with variables",
+			content:     "{{/* Template with nested if statements */}}\n{{if .showGreeting}}Hello{{if .name}} {{.name}}{{end}}!{{end}}",
+			partials:    map[string]string{},
+			expected:    []string{"showGreeting", "name"},
+			description: "Template with nested if statements",
+			shouldError: false,
+		},
+		{
+			name:        "if-else statement with variables",
+			content:     "{{/* Template with if-else */}}\n{{if .isPremium}}Premium user: {{.name}}{{else}}Regular user: {{.name}}{{end}}",
+			partials:    map[string]string{},
+			expected:    []string{"isPremium", "name"},
+			description: "Template with if-else",
+			shouldError: false,
+		},
+		{
 			name:        "multiple arguments",
 			content:     "{{/* Multiple arguments template */}}\nHello {{.name}}, your project is {{.project}} and language is {{.language}}",
 			partials:    map[string]string{},
@@ -307,6 +331,39 @@ func TestRenderTemplate(t *testing.T) {
 			shouldError:    false,
 		},
 		{
+			name:         "conditional template with premium user",
+			templateName: "conditional",
+			envVars: map[string]string{
+				"NAME":      "Alice",
+				"ISPREMIUM": "true",
+				"EMAIL":     "alice@example.com",
+			},
+			expectedOutput: "# User Profile\nName: Alice\n## Premium Features\nThank you for being a premium user!\nYou have access to all premium features.\nYou also have special access to beta features.\nContact: alice@example.com",
+			shouldError:    false,
+		},
+		{
+			name:         "conditional template with premium user and special access",
+			templateName: "conditional",
+			envVars: map[string]string{
+				"NAME":             "Bob",
+				"ISPREMIUM":        "true",
+				"HASSPECIALACCESS": "true",
+				"EMAIL":            "bob@example.com",
+			},
+			expectedOutput: "# User Profile\nName: Bob\n## Premium Features\nThank you for being a premium user!\nYou have access to all premium features.\nYou also have special access to beta features.\nContact: bob@example.com",
+			shouldError:    false,
+		},
+		{
+			name:         "conditional template with standard user",
+			templateName: "conditional",
+			envVars: map[string]string{
+				"NAME":      "Charlie",
+				"ISPREMIUM": "false",
+			},
+			expectedOutput: "# User Profile\nName: Charlie\n## Standard Features\nYou have access to standard features.\nConsider upgrading to premium!\nContact: No email provided",
+			shouldError:    false,
+		},
+		{
 			name:         "template with partials, some env vars not set",
 			templateName: "multiple_partials",
 			envVars: map[string]string{
@@ -416,6 +473,30 @@ func TestServerWithPrompt(t *testing.T) {
 				{
 					Role:    mcp.RoleUser,
 					Content: mcp.NewTextContent("Hello Alice!\nWelcome to the system.\nHave a great day!"),
+				},
+			},
+		},
+		{
+			name:                "conditional template with premium user",
+			promptName:          "conditional",
+			promptArgs:          map[string]string{"name": "Alice", "isPremium": "true", "email": "alice@example.com"},
+			expectedDescription: "Template with conditional content",
+			expectedMessages: []mcp.PromptMessage{
+				{
+					Role:    mcp.RoleUser,
+					Content: mcp.NewTextContent("# User Profile\nName: Alice\n## Premium Features\nThank you for being a premium user!\nYou have access to all premium features.\nContact: alice@example.com"),
+				},
+			},
+		},
+		{
+			name:                "conditional template with standard user",
+			promptName:          "conditional",
+			promptArgs:          map[string]string{"name": "Bob", "isPremium": "false"},
+			expectedDescription: "Template with conditional content",
+			expectedMessages: []mcp.PromptMessage{
+				{
+					Role:    mcp.RoleUser,
+					Content: mcp.NewTextContent("# User Profile\nName: Bob\n## Standard Features\nYou have access to standard features.\nConsider upgrading to premium!\nContact: No email provided"),
 				},
 			},
 		},

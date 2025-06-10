@@ -1,0 +1,22 @@
+{{/* Template with conditional content */}}
+{{- define "conditional" -}}
+# User Profile
+
+Name: {{.name}}
+
+{{if .isPremium}}
+## Premium Features
+Thank you for being a premium user!
+You have access to all premium features.
+
+{{if .hasSpecialAccess}}
+You also have special access to beta features.
+{{end}}
+{{else}}
+## Standard Features
+You have access to standard features.
+Consider upgrading to premium!
+{{end}}
+
+Contact: {{if .email}}{{.email}}{{else}}No email provided{{end}}
+{{- end -}}
