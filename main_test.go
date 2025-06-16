@@ -13,8 +13,7 @@ import (
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
-
-	"github.com/vasayxtx/mcp-custom-prompts/mcptest"
+	"github.com/mark3labs/mcp-go/mcptest"
 )
 
 func TestExtractTemplateArguments(t *testing.T) {
@@ -769,7 +768,7 @@ func TestServerWithPrompt(t *testing.T) {
 		t.Fatalf("addPromptHandlers failed: %v", err)
 	}
 
-	err := srv.Start()
+	err := srv.Start(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
