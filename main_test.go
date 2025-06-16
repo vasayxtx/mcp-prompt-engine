@@ -126,17 +126,154 @@ func TestExtractTemplateArguments(t *testing.T) {
 			description: "Template with deeply nested partials",
 			shouldError: false,
 		},
+		{
+			name:        "template with or condition",
+			content:     "{{/* Template with or condition */}}\n{{if or .show_message .show_alert}}Message: {{.message}}{{end}}\nAlways: {{.name}}",
+			partials:    map[string]string{},
+			expected:    []string{"show_message", "show_alert", "message", "name"},
+			description: "Template with or condition",
+			shouldError: false,
+		},
+		{
+			name:        "template with and condition",
+			content:     "{{/* Template with and condition */}}\n{{if and .is_enabled .has_permission}}Action: {{.action}}{{end}}\nUser: {{.username}}",
+			partials:    map[string]string{},
+			expected:    []string{"is_enabled", "has_permission", "action", "username"},
+			description: "Template with and condition",
+			shouldError: false,
+		},
+		{
+			name:        "template with complex or and conditions",
+			content:     "{{/* Template with complex conditions */}}\n{{if or (and .is_admin .has_access) .force_mode}}Admin panel: {{.admin_data}}{{end}}\n{{if and .show_stats .is_premium}}Stats: {{.statistics}}{{end}}\nGeneral: {{.content}}",
+			partials:    map[string]string{},
+			expected:    []string{"is_admin", "has_access", "force_mode", "admin_data", "show_stats", "is_premium", "statistics", "content"},
+			description: "Template with complex conditions",
+			shouldError: false,
+		},
+		{
+			name:    "template with or in partials",
+			content: "{{/* Template with or in partials */}}\n{{template \"_conditional\" .}}\nMain: {{.main_content}}",
+			partials: map[string]string{
+				"_conditional": "{{if or .show_warning .show_error}}Alert: {{.alert_message}}{{end}}",
+			},
+			expected:    []string{"show_warning", "show_error", "alert_message", "main_content"},
+			description: "Template with or in partials",
+			shouldError: false,
+		},
+		{
+			name:        "template with range node",
+			content:     "{{/* Template with range */}}\n{{range .items}}Item: {{.name}} - {{.value}}{{end}}\nTotal: {{.total}}",
+			partials:    map[string]string{},
+			expected:    []string{"items", "name", "value", "total"},
+			description: "Template with range",
+			shouldError: false,
+		},
+		{
+			name:        "template with with node",
+			content:     "{{/* Template with with */}}\n{{with .user}}Name: {{.name}}, Email: {{.email}}{{end}}\nDefault: {{.default_value}}",
+			partials:    map[string]string{},
+			expected:    []string{"user", "name", "email", "default_value"},
+			description: "Template with with",
+			shouldError: false,
+		},
+		{
+			name:        "template with variables",
+			content:     "{{/* Template with variables */}}\n{{$name := .user_name}}{{$email := .user_email}}User: {{$name}} ({{$email}}) - Role: {{.role}}",
+			partials:    map[string]string{},
+			expected:    []string{"user_name", "user_email", "role"},
+			description: "Template with variables",
+			shouldError: false,
+		},
+		{
+			name:        "template with range and else",
+			content:     "{{/* Template with range and else */}}\n{{range .items}}{{.name}}{{else}}No items: {{.empty_message}}{{end}}",
+			partials:    map[string]string{},
+			expected:    []string{"items", "name", "empty_message"},
+			description: "Template with range and else",
+			shouldError: false,
+		},
+		{
+			name:        "template with if and else",
+			content:     "{{/* Template with if and else */}}\n{{if .show_content}}Content: {{.content}}{{else}}Default: {{.default_content}}{{end}}",
+			partials:    map[string]string{},
+			expected:    []string{"show_content", "content", "default_content"},
+			description: "Template with if and else",
+			shouldError: false,
+		},
+		{
+			name:        "template with with and else",
+			content:     "{{/* Template with with and else */}}\n{{with .user}}Name: {{.name}}{{else}}No user: {{.default_name}}{{end}}",
+			partials:    map[string]string{},
+			expected:    []string{"user", "name", "default_name"},
+			description: "Template with with and else",
+			shouldError: false,
+		},
+		{
+			name:        "template with direct template node",
+			content:     "{{/* Template with direct template node */}}\n{{template \"_direct\"}}\nMain: {{.main_var}}",
+			partials:    map[string]string{"_direct": "Direct template with {{.direct_var}}"},
+			expected:    []string{"direct_var", "main_var"},
+			description: "Template with direct template node",
+			shouldError: false,
+		},
+		{
+			name:        "template with action node",
+			content:     "{{/* Template with action node */}}\n{{ print .message }}\nOther: {{.other}}",
+			partials:    map[string]string{},
+			expected:    []string{"message", "other"},
+			description: "Template with action node",
+			shouldError: false,
+		},
+		{
+			name:        "template with template calls",
+			content:     "{{/* Template with template calls */}}\n{{template \"_helper\" dict \"param\" .value}}\nMain: {{.main}}",
+			partials:    map[string]string{"_helper": "Helper with {{.param}}"},
+			expected:    []string{"value", "main", "param"},
+			description: "Template with template calls",
+			shouldError: false,
+		},
+		{
+			name:        "template with unresolved template calls",
+			content:     "{{/* Template with unresolved calls */}}\n{{template \"missing_partial\" .}}\nMain: {{.main}}",
+			partials:    map[string]string{},
+			expected:    []string{"main"},
+			description: "Template with unresolved calls",
+			shouldError: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testFile := filepath.Join(tempDir, tt.name+".tmpl")
-			err := os.WriteFile(testFile, []byte(tt.content), 0644)
+			// Create a temporary directory for this test
+			testDir := filepath.Join(tempDir, tt.name)
+			err := os.MkdirAll(testDir, 0755)
+			if err != nil {
+				t.Fatalf("Failed to create test directory: %v", err)
+			}
+
+			// Write the main template file
+			testFile := filepath.Join(testDir, tt.name+".tmpl")
+			err = os.WriteFile(testFile, []byte(tt.content), 0644)
 			if err != nil {
 				t.Fatalf("Failed to write test file: %v", err)
 			}
 
-			got, err := extractPromptArguments(testFile, tt.partials)
+			// Write partial files
+			for partialName, partialContent := range tt.partials {
+				partialFile := filepath.Join(testDir, partialName+".tmpl")
+				err = os.WriteFile(partialFile, []byte(partialContent), 0644)
+				if err != nil {
+					t.Fatalf("Failed to write partial file: %v", err)
+				}
+			}
+
+			// Parse all templates in the test directory
+			tmpl, err := parseAllPrompts(testDir)
+			if err != nil {
+				t.Fatalf("Failed to parse templates: %v", err)
+			}
+
+			got, err := extractPromptArguments(tmpl, tt.name)
 
 			if tt.shouldError {
 				if err == nil {
@@ -217,78 +354,299 @@ func TestExtractPromptDescription(t *testing.T) {
 	}
 }
 
-func TestFindUsedPartials(t *testing.T) {
-	partials := map[string]string{
-		"_header": "Header content with {{.role}}",
-		"_footer": "Footer content with {{.conclusion}}",
-		"_unused": "Unused content with {{.unused_var}}",
-	}
-
-	tests := []struct {
-		name     string
-		content  string
-		expected map[string]string
-	}{
-		{
-			name:     "no partials used",
-			content:  "Just some {{.simple}} content",
-			expected: map[string]string{},
-		},
-		{
-			name:     "single partial used",
-			content:  "{{template \"_header\" dict \"role\" .role}}",
-			expected: map[string]string{"_header": "Header content with {{.role}}"},
-		},
-		{
-			name:    "multiple partials used",
-			content: "{{template \"_header\" .}} and {{template \"_footer\" .}}",
-			expected: map[string]string{
-				"_header": "Header content with {{.role}}",
-				"_footer": "Footer content with {{.conclusion}}",
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := findUsedPartials(tt.content, partials)
-
-			if !reflect.DeepEqual(got, tt.expected) {
-				t.Errorf("findUsedPartials() = %v, want %v", got, tt.expected)
-			}
-		})
+func TestExtractPromptDescriptionErrorCases(t *testing.T) {
+	// Test non-existent file
+	_, err := extractPromptDescription("/non/existent/file.tmpl")
+	if err == nil {
+		t.Error("extractPromptDescription() expected error for non-existent file, but got none")
 	}
 }
 
-func TestLoadPartials(t *testing.T) {
+func TestExtractPromptArgumentsErrorCases(t *testing.T) {
 	tempDir := t.TempDir()
 
-	// Create test partials
-	partialFiles := map[string]string{
-		"_header.tmpl": "{{/* Header partial */}}\nYou are {{.role}}",
-		"_footer.tmpl": "{{/* Footer partial */}}\nEnd of prompt",
-		"regular.tmpl": "{{/* Not a partial */}}\nRegular template",
+	// Create a valid template file so parseAllPrompts doesn't fail
+	testFile := filepath.Join(tempDir, "test.tmpl")
+	err := os.WriteFile(testFile, []byte("{{/* Test */}}\nHello {{.name}}"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	for filename, content := range partialFiles {
-		err := os.WriteFile(filepath.Join(tempDir, filename), []byte(content), 0644)
-		if err != nil {
-			t.Fatalf("Failed to write test file %s: %v", filename, err)
+	// Test non-existent template
+	tmpl, err := parseAllPrompts(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to parse templates: %v", err)
+	}
+
+	_, err = extractPromptArguments(tmpl, "non_existent_template")
+	if err == nil {
+		t.Error("extractPromptArguments() expected error for non-existent template, but got none")
+	}
+}
+
+func TestBuildPromptsErrorCases(t *testing.T) {
+	srv := mcptest.NewUnstartedServer(t)
+	defer srv.Close()
+
+	// Test non-existent directory
+	err := addPromptHandlers(srv, "/non/existent/directory", slog.New(slog.DiscardHandler))
+	if err == nil {
+		t.Error("addPromptHandlers() expected error for non-existent directory, but got none")
+	}
+
+	// Test directory that exists but can't be read (permission issue simulation)
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.tmpl")
+	err = os.WriteFile(testFile, []byte("{{/* Test */}}\nHello {{.name}}"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Create a file instead of directory to simulate ReadDir error
+	invalidDir := filepath.Join(tempDir, "not_a_dir.txt")
+	err = os.WriteFile(invalidDir, []byte("not a directory"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write invalid dir file: %v", err)
+	}
+
+	// This should trigger the ReadDir error path in addPromptHandlers
+	err = addPromptHandlers(srv, invalidDir, slog.New(slog.DiscardHandler))
+	if err == nil {
+		t.Error("addPromptHandlers() expected error when ReadDir fails, but got none")
+	}
+
+	// Test error case with directory that has templates but parseAllPrompts will fail after ReadDir succeeds
+	badTemplateDir := t.TempDir()
+	err = os.WriteFile(filepath.Join(badTemplateDir, "good.tmpl"), []byte("{{/* Good */}}\nGood template"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write good template: %v", err)
+	}
+	err = os.WriteFile(filepath.Join(badTemplateDir, "bad.tmpl"), []byte("{{/* Bad */}}\n{{unclosed"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write bad template: %v", err)
+	}
+
+	err = addPromptHandlers(srv, badTemplateDir, slog.New(slog.DiscardHandler))
+	if err == nil {
+		t.Error("addPromptHandlers() expected error for bad template syntax, but got none")
+	}
+}
+
+func TestRenderTemplateErrorCases(t *testing.T) {
+	var buf bytes.Buffer
+
+	// Test non-existent directory
+	err := renderTemplate(&buf, "/non/existent/directory", "template_name")
+	if err == nil {
+		t.Error("renderTemplate() expected error for non-existent directory, but got none")
+	}
+
+	// Test template execution error with missing template
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "error.tmpl")
+	// Create a template that will cause execution error (missing template reference)
+	err = os.WriteFile(testFile, []byte("{{/* Error template */}}\n{{template \"missing_template\" .}}"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	var errorBuf bytes.Buffer
+	err = renderTemplate(&errorBuf, tempDir, "error")
+	if err == nil {
+		t.Error("renderTemplate() expected execution error for missing template, but got none")
+	}
+
+	// Test error with non-existent template in renderTemplate
+	var nonExistentBuf bytes.Buffer
+	err = renderTemplate(&nonExistentBuf, tempDir, "does_not_exist")
+	if err == nil {
+		t.Error("renderTemplate() expected error for non-existent template, but got none")
+	}
+}
+
+func TestParseAllPromptsErrorCases(t *testing.T) {
+	// Test non-existent directory
+	_, err := parseAllPrompts("/non/existent/directory")
+	if err == nil {
+		t.Error("parseAllPrompts() expected error for non-existent directory, but got none")
+	}
+
+	// Test directory with invalid template syntax
+	tempDir := t.TempDir()
+	invalidFile := filepath.Join(tempDir, "invalid.tmpl")
+	err = os.WriteFile(invalidFile, []byte("{{/* Invalid template */}}\n{{.unclosed"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write invalid template file: %v", err)
+	}
+
+	_, err = parseAllPrompts(tempDir)
+	if err == nil {
+		t.Error("parseAllPrompts() expected error for invalid template syntax, but got none")
+	}
+}
+
+func TestWalkNodesNilHandling(t *testing.T) {
+	// Test walkNodes with nil nodes - this is the path that's not covered
+	argsMap := make(map[string]struct{})
+	builtInFields := map[string]struct{}{"date": {}}
+	processedTemplates := make(map[string]bool)
+
+	// This should return nil immediately for nil node
+	err := walkNodes(nil, argsMap, builtInFields, nil, processedTemplates, []string{})
+	if err != nil {
+		t.Errorf("walkNodes() with nil node should return nil, but got error: %v", err)
+	}
+
+	// argsMap should remain empty
+	if len(argsMap) != 0 {
+		t.Errorf("walkNodes() with nil node should not modify argsMap, but got %d entries", len(argsMap))
+	}
+}
+
+func TestWalkNodesVariableHandling(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create a template with a variable (non-$ variable)
+	testFile := filepath.Join(tempDir, "test.tmpl")
+	err := os.WriteFile(testFile, []byte("{{/* Test template */}}\n{{$var := .input}}{{$var}}"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tmpl, err := parseAllPrompts(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to parse templates: %v", err)
+	}
+
+	// Test extracting arguments - should handle variable nodes properly
+	args, err := extractPromptArguments(tmpl, "test")
+	if err != nil {
+		t.Fatalf("extractPromptArguments() unexpected error: %v", err)
+	}
+
+	// Should only contain "input", not the template variables
+	expected := []string{"input"}
+	if len(args) != len(expected) {
+		t.Errorf("extractPromptArguments() returned %d args, want %d", len(args), len(expected))
+	}
+
+	for _, expectedArg := range expected {
+		found := false
+		for _, arg := range args {
+			if arg == expectedArg {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("extractPromptArguments() missing expected arg: %s", expectedArg)
 		}
 	}
+}
 
-	partials, err := loadPartials(tempDir)
+func TestPromptHandlerErrorCases(t *testing.T) {
+	// Test promptHandler with invalid directory
+	handler := promptHandler("/non/existent/directory", "test", "Test", map[string]string{})
+
+	_, err := handler(context.Background(), mcp.GetPromptRequest{})
+	if err == nil {
+		t.Error("promptHandler() expected error for non-existent directory, but got none")
+	}
+
+	// Test promptHandler with template resolution error
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.tmpl")
+	err = os.WriteFile(testFile, []byte("{{/* Test */}}\nHello {{.name}}"), 0644)
 	if err != nil {
-		t.Fatalf("loadPartials() error = %v", err)
+		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	expected := map[string]string{
-		"_header": "{{/* Header partial */}}\nYou are {{.role}}",
-		"_footer": "{{/* Footer partial */}}\nEnd of prompt",
+	// Create handler for a non-existent template
+	handler2 := promptHandler(tempDir, "nonexistent", "Test", map[string]string{})
+	_, err = handler2(context.Background(), mcp.GetPromptRequest{})
+	if err == nil {
+		t.Error("promptHandler() expected error for non-existent template, but got none")
 	}
 
-	if !reflect.DeepEqual(partials, expected) {
-		t.Errorf("loadPartials() = %v, want %v", partials, expected)
+	// Test promptHandler with template execution error
+	errorFile := filepath.Join(tempDir, "error.tmpl")
+	err = os.WriteFile(errorFile, []byte("{{/* Error */}}\n{{template \"missing\" .}}"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write error file: %v", err)
 	}
+
+	handler3 := promptHandler(tempDir, "error", "Test", map[string]string{})
+	_, err = handler3(context.Background(), mcp.GetPromptRequest{})
+	if err == nil {
+		t.Error("promptHandler() expected execution error, but got none")
+	}
+}
+
+func TestDict(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		expected map[string]interface{}
+		hasError bool
+	}{
+		{
+			name:     "empty args",
+			args:     []string{},
+			expected: map[string]interface{}{},
+			hasError: false,
+		},
+		{
+			name:     "single key-value pair",
+			args:     []string{"key", "value"},
+			expected: map[string]interface{}{"key": "value"},
+			hasError: false,
+		},
+		{
+			name:     "multiple key-value pairs",
+			args:     []string{"key1", "value1", "key2", "value2"},
+			expected: map[string]interface{}{"key1": "value1", "key2": "value2"},
+			hasError: false,
+		},
+		{
+			name:     "odd number of arguments",
+			args:     []string{"key1", "value1", "key2"},
+			expected: nil,
+			hasError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Convert string slice to interface slice
+			args := make([]interface{}, len(tt.args))
+			for i, v := range tt.args {
+				args[i] = v
+			}
+
+			result := dict(args...)
+			if tt.hasError {
+				if result != nil {
+					t.Error("dict() expected nil result for error case, but got non-nil")
+				}
+				return
+			}
+			if result == nil {
+				t.Error("dict() unexpected nil result")
+				return
+			}
+			if !reflect.DeepEqual(result, tt.expected) {
+				t.Errorf("dict() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+
+	// Test non-string key
+	t.Run("non-string key", func(t *testing.T) {
+		result := dict(123, "value")
+		if result != nil {
+			t.Error("dict() expected nil result for non-string key, but got non-nil")
+		}
+	})
 }
 
 func TestRenderTemplate(t *testing.T) {
@@ -342,7 +700,7 @@ func TestRenderTemplate(t *testing.T) {
 			name:         "conditional greeting, show extra message true",
 			templateName: "conditional_greeting",
 			envVars: map[string]string{
-				"NAME":                 "Alice",
+				"NAME":               "Alice",
 				"SHOW_EXTRA_MESSAGE": "true",
 			},
 			expectedOutput: "Hello Alice!\nThis is an extra message just for you.\nHave a good day.",
@@ -352,8 +710,8 @@ func TestRenderTemplate(t *testing.T) {
 			name:         "conditional greeting, show extra message false",
 			templateName: "conditional_greeting",
 			envVars: map[string]string{
-				"NAME":                 "Bob",
-				"SHOW_EXTRA_MESSAGE": "", 
+				"NAME":               "Bob",
+				"SHOW_EXTRA_MESSAGE": "",
 			},
 			expectedOutput: "Hello Bob!\nHave a good day.",
 			shouldError:    false,
@@ -407,8 +765,8 @@ func TestServerWithPrompt(t *testing.T) {
 	srv := mcptest.NewUnstartedServer(t)
 	defer srv.Close()
 
-	if err := buildPrompts(srv, "./testdata", slog.New(slog.DiscardHandler)); err != nil {
-		t.Fatalf("buildPrompts failed: %v", err)
+	if err := addPromptHandlers(srv, "./testdata", slog.New(slog.DiscardHandler)); err != nil {
+		t.Fatalf("addPromptHandlers failed: %v", err)
 	}
 
 	err := srv.Start()
@@ -469,7 +827,7 @@ func TestServerWithPrompt(t *testing.T) {
 			name:       "conditional greeting, show extra true",
 			promptName: "conditional_greeting",
 			promptArgs: map[string]string{
-				"name":                 "Carlos",
+				"name":               "Carlos",
 				"show_extra_message": "true",
 			},
 			expectedDescription: "Conditional greeting template",
@@ -484,8 +842,8 @@ func TestServerWithPrompt(t *testing.T) {
 			name:       "conditional greeting, show extra false",
 			promptName: "conditional_greeting",
 			promptArgs: map[string]string{
-				"name":                 "Diana",
-				"show_extra_message": "", 
+				"name":               "Diana",
+				"show_extra_message": "",
 			},
 			expectedDescription: "Conditional greeting template",
 			expectedMessages: []mcp.PromptMessage{
