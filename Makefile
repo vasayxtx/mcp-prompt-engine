@@ -9,7 +9,7 @@ FLAGS := -ldflags "-w -s -X main.version=$(VERSION)"
 .PHONY: build
 build:
 	@echo "Building..."
-	go build $(FLAGS) -trimpath -o mcp-custom-prompts main.go
+	go build $(FLAGS) -trimpath -o mcp-prompt-engine main.go
 
 .PHONY: lint
 lint:
