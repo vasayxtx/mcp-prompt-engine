@@ -1,5 +1,5 @@
 .idea/
 vendor/
-mcp-custom-prompts
+mcp-prompt-engine
 coverage.out
 *.log

@@ -1,4 +1,4 @@
-module github.com/vasayxtx/mcp-custom-prompts
+module github.com/vasayxtx/mcp-prompt-engine
 
 go 1.24.0
 

@@ -1,13 +1,14 @@
-# Custom Prompts MCP Server
+# MCP Prompt Engine
 
-A Model Control Protocol (MCP) server for managing and serving custom prompt templates using Go's `text/template` engine.
-It allows you to create reusable prompt templates with variable placeholders and partials that can be filled in at runtime.
+A powerful Model Control Protocol (MCP) server for managing and serving dynamic prompt templates using Go's `text/template` engine.
+It allows you to create reusable prompt templates with variable placeholders, logical operators, and partials that can be filled in at runtime.
 
 ## Features
 
 - Load prompt templates from `.tmpl` files using Go's `text/template` syntax
 - Support for template variables using `{{.variable_name}}` syntax
 - Automatic detection of variables used within `{{if .condition}}` blocks as prompt arguments
+- Support for logical operators in conditionals: `{{if and .condition1 .condition2}}` and `{{if or .condition1 .condition2}}`
 - Template partials support (files with `_` prefix for reusable components)
 - Template comment-based descriptions (`{{/* description */}}` on first line)
 - Environment variable injection into prompts
@@ -18,7 +19,7 @@ It allows you to create reusable prompt templates with variable placeholders and
 ## Installation
 
 ```bash
-go install github.com/vasayxtx/mcp-custom-prompts@latest
+go install github.com/vasayxtx/mcp-prompt-engine@latest
 ```
 
 ### Building from source
@@ -48,6 +49,7 @@ The server uses Go's `text/template` engine, which provides powerful templating 
 - **Built-in variables**: 
   - `{{.date}}` - Current date and time
 - **Conditionals**: `{{if .condition}}...{{end}}`, `{{if .condition}}...{{else}}...{{end}}`
+- **Logical operators**: `{{if and .condition1 .condition2}}...{{end}}`, `{{if or .condition1 .condition2}}...{{end}}`
 - **Loops**: `{{range .items}}...{{end}}`
 - **Template inclusion**: `{{template "partial_name" .}}` or `{{template "partial_name" dict "key" "value"}}`
 
@@ -122,7 +124,7 @@ Remember to be specific in your recommendations, providing clear guidance on how
 ### Running the Server
 
 ```bash
-./mcp-custom-prompts -prompts /path/to/prompts/directory -log-file /path/to/log/file
+./mcp-prompt-engine -prompts /path/to/prompts/directory -log-file /path/to/log/file
 ```
 
 ### Rendering a Template to Stdout
@@ -130,7 +132,7 @@ Remember to be specific in your recommendations, providing clear guidance on how
 You can also render a specific template directly to stdout without starting the server:
 
 ```bash
-./mcp-custom-prompts -prompts /path/to/prompts/directory -template template_name
+./mcp-prompt-engine -prompts /path/to/prompts/directory -template template_name
 ```
 
 This is useful for testing templates or using them in shell scripts.
@@ -148,7 +150,7 @@ To use this MCP server with Claude Desktop, add the following configuration to y
 ```json
 {
   "custom-prompts": {
-    "command": "/path/to/mcp-custom-prompts",
+    "command": "/path/to/mcp-prompt-engine",
     "args": [
       "-prompts",
       "/path/to/directory/with/prompts",
