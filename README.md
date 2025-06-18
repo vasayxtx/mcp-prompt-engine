@@ -1,20 +1,14 @@
 # MCP Prompt Engine
 
-A powerful Model Control Protocol (MCP) server for managing and serving dynamic prompt templates using Go's `text/template` engine.
-It allows you to create reusable prompt templates with variable placeholders, logical operators, and partials that can be filled in at runtime.
+A simple Model Control Protocol (MCP) server for managing and serving dynamic prompt templates using Go's `text/template` engine.
+It allows you to create reusable prompt templates with variable placeholders, conditionals, loops, and partials that can be filled in at runtime.
 
 ## Features
 
-- Load prompt templates from `.tmpl` files using Go's `text/template` syntax
-- Support for template variables using `{{.variable_name}}` syntax
-- Automatic detection of variables used within `{{if .condition}}` blocks as prompt arguments
-- Support for logical operators in conditionals: `{{if and .condition1 .condition2}}` and `{{if or .condition1 .condition2}}`
-- Template partials support (files with `_` prefix for reusable components)
-- Template comment-based descriptions (`{{/* description */}}` on first line)
-- Environment variable injection into prompts
-- Built-in template functions and variables
+- Go `text/template` syntax with variables, conditionals, loops, and partials
+- Automatic JSON argument parsing with string fallback
+- Environment variable injection and built-in functions
 - Compatible with Claude Desktop and other MCP clients
-- Simple stdio-based interface
 
 ## Installation
 
@@ -52,6 +46,25 @@ The server uses Go's `text/template` engine, which provides powerful templating 
 - **Logical operators**: `{{if and .condition1 .condition2}}...{{end}}`, `{{if or .condition1 .condition2}}...{{end}}`
 - **Loops**: `{{range .items}}...{{end}}`
 - **Template inclusion**: `{{template "partial_name" .}}` or `{{template "partial_name" dict "key" "value"}}`
+
+### JSON Argument Parsing
+
+The server automatically parses argument values as JSON when possible, enabling rich data types in templates:
+
+- **Booleans**: `true`, `false` → Go boolean values
+- **Numbers**: `42`, `3.14` → Go numeric values  
+- **Arrays**: `["item1", "item2"]` → Go slices for use with `{{range}}`
+- **Objects**: `{"key": "value"}` → Go maps for structured data
+- **Strings**: Invalid JSON falls back to string values
+
+This allows for advanced template operations like:
+```go
+{{range .items}}Item: {{.}}{{end}}
+{{if .enabled}}Feature is enabled{{end}}
+{{.config.timeout}} seconds
+```
+
+To disable JSON parsing and treat all arguments as strings, use the `--disable-json-args` flag.
 
 ### Partials (Reusable Components)
 
@@ -141,6 +154,7 @@ Options:
 - `-prompts`: Directory containing prompt template files (default: "./prompts")
 - `-log-file`: Path to log file (if not specified, logs to stdout)
 - `-template`: Template name to render to stdout (bypasses server mode)
+- `-disable-json-args`: Disable JSON argument parsing, treat all arguments as strings
 - `-version`: Show version and exit
 
 ## Configuring Claude Desktop
