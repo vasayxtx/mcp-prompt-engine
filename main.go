@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,6 +31,7 @@ func main() {
 	promptsDir := flag.String("prompts", "./prompts", "Directory containing prompt template files")
 	logFile := flag.String("log-file", "", "Path to log file (if not specified, logs to stdout)")
 	templateFlag := flag.String("template", "", "Template name to render to stdout")
+	disableJSONArgs := flag.Bool("disable-json-args", false, "Disable JSON parsing for arguments (use string-only mode)")
 	flag.Parse()
 
 	if *showVersion {
@@ -46,12 +48,12 @@ func main() {
 		return
 	}
 
-	if err := runServer(*promptsDir, *logFile); err != nil {
+	if err := runServer(*promptsDir, *logFile, !*disableJSONArgs); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func runServer(promptsDir string, logFile string) error {
+func runServer(promptsDir string, logFile string, enableJSONArgs bool) error {
 	logWriter := os.Stdout
 	if logFile != "" {
 		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -82,7 +84,7 @@ func runServer(promptsDir string, logFile string) error {
 		server.WithHooks(srvHooks),
 	)
 
-	if err := addPromptHandlers(srv, promptsDir, logger); err != nil {
+	if err := addPromptHandlers(srv, promptsDir, logger, enableJSONArgs); err != nil {
 		return fmt.Errorf("build prompts: %w", err)
 	}
 
@@ -101,7 +103,7 @@ type promptServer interface {
 
 // addPromptHandlers scans the prompts directory for template files, extracts their descriptions and arguments,
 // and registers prompt handlers with the provided server instance.
-func addPromptHandlers(srv promptServer, promptsDir string, logger *slog.Logger) error {
+func addPromptHandlers(srv promptServer, promptsDir string, logger *slog.Logger, enableJSONArgs bool) error {
 	tmpl, err := parseAllPrompts(promptsDir)
 	if err != nil {
 		return fmt.Errorf("parse all prompts: %w", err)
@@ -151,7 +153,7 @@ func addPromptHandlers(srv promptServer, promptsDir string, logger *slog.Logger)
 		}
 
 		srv.AddPrompt(mcp.NewPrompt(promptName, promptOpts...),
-			promptHandler(promptsDir, promptName, description, envArgs))
+			promptHandler(promptsDir, promptName, description, envArgs, enableJSONArgs))
 
 		logger.Info("Prompt registered",
 			"name", promptName,
@@ -332,7 +334,7 @@ func walkNodes(
 }
 
 func promptHandler(
-	promptsDir string, promptName string, description string, envArgs map[string]string,
+	promptsDir string, promptName string, description string, envArgs map[string]string, enableJSONArgs bool,
 ) func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	return func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		tmpl, err := parseAllPrompts(promptsDir)
@@ -353,9 +355,7 @@ func promptHandler(
 		for arg, value := range envArgs {
 			data[arg] = value
 		}
-		for arg, value := range request.Params.Arguments {
-			data[arg] = value
-		}
+		parseMCPArgs(request.Params.Arguments, enableJSONArgs, data)
 
 		var result strings.Builder
 		if err = tmpl.ExecuteTemplate(&result, templateName, data); err != nil {
@@ -400,6 +400,22 @@ func dict(values ...interface{}) map[string]interface{} {
 		result[key] = values[i+1]
 	}
 	return result
+}
+
+// parseMCPArgs attempts to parse each argument value as JSON when enableJSONArgs is true.
+// If parsing succeeds, stores the parsed value (bool, number, nil, object, etc.) in the data map.
+// If parsing fails or JSON parsing is disabled, stores the original string value.
+func parseMCPArgs(args map[string]string, enableJSONArgs bool, data map[string]interface{}) {
+	for key, value := range args {
+		if enableJSONArgs {
+			var parsed interface{}
+			if err := json.Unmarshal([]byte(value), &parsed); err == nil {
+				data[key] = parsed
+				continue
+			}
+		}
+		data[key] = value
+	}
 }
 
 // renderTemplate renders a specified template to stdout with resolved partials and environment variables

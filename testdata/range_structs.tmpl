@@ -1,0 +1,5 @@
+{{/* Template for testing range with JSON array of structs */}}
+Users:
+{{range .users}}  - {{.name}} ({{.age}}) - {{.role}}
+{{end}}
+Total: {{.total}} users

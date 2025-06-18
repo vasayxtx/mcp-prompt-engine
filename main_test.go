@@ -428,7 +428,7 @@ func TestBuildPromptsErrorCases(t *testing.T) {
 	defer srv.Close()
 
 	// Test non-existent directory
-	err := addPromptHandlers(srv, "/non/existent/directory", slog.New(slog.DiscardHandler))
+	err := addPromptHandlers(srv, "/non/existent/directory", slog.New(slog.DiscardHandler), true)
 	if err == nil {
 		t.Error("addPromptHandlers() expected error for non-existent directory, but got none")
 	}
@@ -449,7 +449,7 @@ func TestBuildPromptsErrorCases(t *testing.T) {
 	}
 
 	// This should trigger the ReadDir error path in addPromptHandlers
-	err = addPromptHandlers(srv, invalidDir, slog.New(slog.DiscardHandler))
+	err = addPromptHandlers(srv, invalidDir, slog.New(slog.DiscardHandler), true)
 	if err == nil {
 		t.Error("addPromptHandlers() expected error when ReadDir fails, but got none")
 	}
@@ -465,7 +465,7 @@ func TestBuildPromptsErrorCases(t *testing.T) {
 		t.Fatalf("Failed to write bad template: %v", err)
 	}
 
-	err = addPromptHandlers(srv, badTemplateDir, slog.New(slog.DiscardHandler))
+	err = addPromptHandlers(srv, badTemplateDir, slog.New(slog.DiscardHandler), true)
 	if err == nil {
 		t.Error("addPromptHandlers() expected error for bad template syntax, but got none")
 	}
@@ -585,7 +585,7 @@ func TestWalkNodesVariableHandling(t *testing.T) {
 
 func TestPromptHandlerErrorCases(t *testing.T) {
 	// Test promptHandler with invalid directory
-	handler := promptHandler("/non/existent/directory", "test", "Test", map[string]string{})
+	handler := promptHandler("/non/existent/directory", "test", "Test", map[string]string{}, true)
 
 	_, err := handler(context.Background(), mcp.GetPromptRequest{})
 	if err == nil {
@@ -601,7 +601,7 @@ func TestPromptHandlerErrorCases(t *testing.T) {
 	}
 
 	// Create handler for a non-existent template
-	handler2 := promptHandler(tempDir, "nonexistent", "Test", map[string]string{})
+	handler2 := promptHandler(tempDir, "nonexistent", "Test", map[string]string{}, true)
 	_, err = handler2(context.Background(), mcp.GetPromptRequest{})
 	if err == nil {
 		t.Error("promptHandler() expected error for non-existent template, but got none")
@@ -614,7 +614,7 @@ func TestPromptHandlerErrorCases(t *testing.T) {
 		t.Fatalf("Failed to write error file: %v", err)
 	}
 
-	handler3 := promptHandler(tempDir, "error", "Test", map[string]string{})
+	handler3 := promptHandler(tempDir, "error", "Test", map[string]string{}, true)
 	_, err = handler3(context.Background(), mcp.GetPromptRequest{})
 	if err == nil {
 		t.Error("promptHandler() expected execution error, but got none")
@@ -823,7 +823,7 @@ func TestServerWithPrompt(t *testing.T) {
 	srv := mcptest.NewUnstartedServer(t)
 	defer srv.Close()
 
-	if err := addPromptHandlers(srv, "./testdata", slog.New(slog.DiscardHandler)); err != nil {
+	if err := addPromptHandlers(srv, "./testdata", slog.New(slog.DiscardHandler), true); err != nil {
 		t.Fatalf("addPromptHandlers failed: %v", err)
 	}
 
@@ -976,4 +976,409 @@ var nlRegExp = regexp.MustCompile(`\n+`)
 func normalizeNewlines(s string) string {
 	s = nlRegExp.ReplaceAllString(s, "\n")
 	return strings.TrimSpace(s)
+}
+
+func TestParseMCPArgs(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          map[string]string
+		enableJSONArgs bool
+		expected       map[string]interface{}
+	}{
+		{
+			name:           "empty arguments with JSON enabled",
+			input:          map[string]string{},
+			enableJSONArgs: true,
+			expected:       map[string]interface{}{},
+		},
+		{
+			name: "string arguments remain strings with JSON enabled",
+			input: map[string]string{
+				"name":    "John",
+				"message": "Hello World",
+			},
+			enableJSONArgs: true,
+			expected: map[string]interface{}{
+				"name":    "John",
+				"message": "Hello World",
+			},
+		},
+		{
+			name: "boolean arguments become booleans with JSON enabled",
+			input: map[string]string{
+				"enabled":  "true",
+				"disabled": "false",
+			},
+			enableJSONArgs: true,
+			expected: map[string]interface{}{
+				"enabled":  true,
+				"disabled": false,
+			},
+		},
+		{
+			name: "number arguments become numbers with JSON enabled",
+			input: map[string]string{
+				"count":   "42",
+				"price":   "19.99",
+				"balance": "-100.5",
+			},
+			enableJSONArgs: true,
+			expected: map[string]interface{}{
+				"count":   float64(42),
+				"price":   19.99,
+				"balance": -100.5,
+			},
+		},
+		{
+			name: "null argument becomes nil with JSON enabled",
+			input: map[string]string{
+				"optional": "null",
+			},
+			enableJSONArgs: true,
+			expected: map[string]interface{}{
+				"optional": nil,
+			},
+		},
+		{
+			name: "array arguments become arrays with JSON enabled",
+			input: map[string]string{
+				"items":   `["apple", "banana", "cherry"]`,
+				"numbers": `[1, 2, 3]`,
+			},
+			enableJSONArgs: true,
+			expected: map[string]interface{}{
+				"items":   []interface{}{"apple", "banana", "cherry"},
+				"numbers": []interface{}{float64(1), float64(2), float64(3)},
+			},
+		},
+		{
+			name: "object arguments become objects with JSON enabled",
+			input: map[string]string{
+				"user": `{"name": "Alice", "age": 30, "active": true}`,
+			},
+			enableJSONArgs: true,
+			expected: map[string]interface{}{
+				"user": map[string]interface{}{
+					"name":   "Alice",
+					"age":    float64(30),
+					"active": true,
+				},
+			},
+		},
+		{
+			name: "mixed valid JSON and invalid strings with JSON enabled",
+			input: map[string]string{
+				"name":        "John Doe",          // Invalid JSON - remains string
+				"enabled":     "true",              // Valid JSON - becomes boolean
+				"count":       "42",                // Valid JSON - becomes number
+				"description": "This is a string", // Invalid JSON - remains string
+				"items":       `["a", "b"]`,        // Valid JSON - becomes array
+			},
+			enableJSONArgs: true,
+			expected: map[string]interface{}{
+				"name":        "John Doe",
+				"enabled":     true,
+				"count":       float64(42),
+				"description": "This is a string",
+				"items":       []interface{}{"a", "b"},
+			},
+		},
+		{
+			name: "quoted strings remain as strings with JSON enabled",
+			input: map[string]string{
+				"quoted_name":   `"Alice"`,
+				"quoted_number": `"123"`,
+			},
+			enableJSONArgs: true,
+			expected: map[string]interface{}{
+				"quoted_name":   "Alice",
+				"quoted_number": "123",
+			},
+		},
+		{
+			name: "invalid JSON remains as strings with JSON enabled",
+			input: map[string]string{
+				"invalid_json":   `{name: "Alice"}`,  // Missing quotes around key
+				"incomplete":     `{"name": "Alice"`, // Missing closing brace
+				"trailing_comma": `{"name": "Alice",}`, // Trailing comma
+			},
+			enableJSONArgs: true,
+			expected: map[string]interface{}{
+				"invalid_json":   `{name: "Alice"}`,
+				"incomplete":     `{"name": "Alice"`,
+				"trailing_comma": `{"name": "Alice",}`,
+			},
+		},
+		{
+			name: "all arguments remain strings when JSON disabled",
+			input: map[string]string{
+				"name":     "John",
+				"enabled":  "true",
+				"count":    "42",
+				"optional": "null",
+				"items":    `["a", "b"]`,
+			},
+			enableJSONArgs: false,
+			expected: map[string]interface{}{
+				"name":     "John",
+				"enabled":  "true",
+				"count":    "42",
+				"optional": "null",
+				"items":    `["a", "b"]`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := make(map[string]interface{})
+			parseMCPArgs(tt.input, tt.enableJSONArgs, data)
+			
+			if !reflect.DeepEqual(data, tt.expected) {
+				t.Errorf("parseMCPArgs() = %v, want %v", data, tt.expected)
+			}
+		})
+	}
+}
+
+func TestServerWithJSONArgumentParsing(t *testing.T) {
+	ctx := context.Background()
+
+	srv := mcptest.NewUnstartedServer(t)
+	defer srv.Close()
+
+	if err := addPromptHandlers(srv, "./testdata", slog.New(slog.DiscardHandler), true); err != nil {
+		t.Fatalf("addPromptHandlers failed: %v", err)
+	}
+
+	err := srv.Start(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name                string
+		promptName          string
+		promptArgs          map[string]string
+		expectedDescription string
+		expectedContent     string
+	}{
+		{
+			name:       "conditional template with boolean true",
+			promptName: "conditional_greeting",
+			promptArgs: map[string]string{
+				"name":               "Alice",
+				"show_extra_message": "true", // JSON boolean becomes actual boolean
+			},
+			expectedDescription: "Conditional greeting template",
+			expectedContent:     "Hello Alice!\nThis is an extra message just for you.\nHave a good day.",
+		},
+		{
+			name:       "conditional template with boolean false",
+			promptName: "conditional_greeting",
+			promptArgs: map[string]string{
+				"name":               "Bob",
+				"show_extra_message": "false", // JSON boolean becomes actual boolean
+			},
+			expectedDescription: "Conditional greeting template",
+			expectedContent:     "Hello Bob!\nHave a good day.",
+		},
+		{
+			name:       "conditional template with null (falsy)",
+			promptName: "conditional_greeting",
+			promptArgs: map[string]string{
+				"name":               "Charlie",
+				"show_extra_message": "null", // JSON null becomes nil (falsy)
+			},
+			expectedDescription: "Conditional greeting template",
+			expectedContent:     "Hello Charlie!\nHave a good day.",
+		},
+		{
+			name:       "conditional template with number zero (falsy)",
+			promptName: "conditional_greeting",
+			promptArgs: map[string]string{
+				"name":               "David",
+				"show_extra_message": "0", // JSON number 0 becomes float64(0) (falsy)
+			},
+			expectedDescription: "Conditional greeting template",
+			expectedContent:     "Hello David!\nHave a good day.",
+		},
+		{
+			name:       "conditional template with non-zero number (truthy)",
+			promptName: "conditional_greeting",
+			promptArgs: map[string]string{
+				"name":               "Eve",
+				"show_extra_message": "1", // JSON number 1 becomes float64(1) (truthy)
+			},
+			expectedDescription: "Conditional greeting template",
+			expectedContent:     "Hello Eve!\nThis is an extra message just for you.\nHave a good day.",
+		},
+		{
+			name:       "conditional template with string (still works)",
+			promptName: "conditional_greeting",
+			promptArgs: map[string]string{
+				"name":               "Frank",
+				"show_extra_message": "yes please", // Invalid JSON, remains string (truthy)
+			},
+			expectedDescription: "Conditional greeting template",
+			expectedContent:     "Hello Frank!\nThis is an extra message just for you.\nHave a good day.",
+		},
+		{
+			name:       "range with JSON array of scalars",
+			promptName: "range_scalars",
+			promptArgs: map[string]string{
+				"numbers": `[1, 2, 3, 4, 5]`,        // JSON array of numbers
+				"tags":    `["golang", "template", "json"]`, // JSON array of strings
+				"result":  "Complete",
+			},
+			expectedDescription: "Template for testing range with JSON array of scalars",
+			expectedContent:     "Numbers: 1 2 3 4 5 \nTags: #golang #template #json \nResult: Complete",
+		},
+		{
+			name:       "range with JSON array of structs",
+			promptName: "range_structs",
+			promptArgs: map[string]string{
+				"users": `[{"name": "Alice", "age": 30, "role": "admin"}, {"name": "Bob", "age": 25, "role": "user"}, {"name": "Charlie", "age": 35, "role": "manager"}]`,
+				"total": "3",
+			},
+			expectedDescription: "Template for testing range with JSON array of structs",
+			expectedContent:     "Users:\n  - Alice (30) - admin\n  - Bob (25) - user\n  - Charlie (35) - manager\nTotal: 3 users",
+		},
+		{
+			name:       "with + JSON object",
+			promptName: "with_object",
+			promptArgs: map[string]string{
+				"config":      `{"name": "MyApp", "version": "1.2.3", "debug": true}`,
+				"environment": "production",
+			},
+			expectedDescription: "Template for testing with + JSON object",
+			expectedContent:     "Configuration:\n  Name: MyApp\n  Version: 1.2.3\n  Debug: true\nEnvironment: production",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var getReq mcp.GetPromptRequest
+			getReq.Params.Name = tt.promptName
+			getReq.Params.Arguments = tt.promptArgs
+			getResult, err := srv.Client().GetPrompt(ctx, getReq)
+			if err != nil {
+				t.Fatalf("GetPrompt failed: %v", err)
+			}
+
+			if getResult.Description != tt.expectedDescription {
+				t.Errorf("Expected prompt description %q, got %q", tt.expectedDescription, getResult.Description)
+			}
+
+			if len(getResult.Messages) != 1 {
+				t.Fatalf("Expected 1 message, got %d", len(getResult.Messages))
+			}
+
+			content, ok := getResult.Messages[0].Content.(mcp.TextContent)
+			if !ok {
+				t.Fatalf("Expected TextContent, got %T", getResult.Messages[0].Content)
+			}
+			
+			actualContent := normalizeNewlines(content.Text)
+			if actualContent != tt.expectedContent {
+				t.Errorf("Expected content %q, got %q", tt.expectedContent, actualContent)
+			}
+		})
+	}
+}
+
+func TestServerWithDisabledJSONArgumentParsing(t *testing.T) {
+	ctx := context.Background()
+
+	srv := mcptest.NewUnstartedServer(t)
+	defer srv.Close()
+
+	// Test with JSON parsing disabled (string-only mode)
+	if err := addPromptHandlers(srv, "./testdata", slog.New(slog.DiscardHandler), false); err != nil {
+		t.Fatalf("addPromptHandlers failed: %v", err)
+	}
+
+	err := srv.Start(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name                string
+		promptName          string
+		promptArgs          map[string]string
+		expectedDescription string
+		expectedContent     string
+	}{
+		{
+			name:       "conditional template with string 'true' (truthy)",
+			promptName: "conditional_greeting",
+			promptArgs: map[string]string{
+				"name":               "Alice",
+				"show_extra_message": "true", // Remains string "true" (truthy)
+			},
+			expectedDescription: "Conditional greeting template",
+			expectedContent:     "Hello Alice!\nThis is an extra message just for you.\nHave a good day.",
+		},
+		{
+			name:       "conditional template with string 'false' (truthy)",
+			promptName: "conditional_greeting",
+			promptArgs: map[string]string{
+				"name":               "Bob",
+				"show_extra_message": "false", // Remains string "false" (truthy!)
+			},
+			expectedDescription: "Conditional greeting template",
+			expectedContent:     "Hello Bob!\nThis is an extra message just for you.\nHave a good day.", // Shows extra message because "false" string is truthy
+		},
+		{
+			name:       "conditional template with empty string (falsy)",
+			promptName: "conditional_greeting",
+			promptArgs: map[string]string{
+				"name":               "Charlie",
+				"show_extra_message": "", // Empty string (falsy)
+			},
+			expectedDescription: "Conditional greeting template",
+			expectedContent:     "Hello Charlie!\nHave a good day.",
+		},
+		{
+			name:       "conditional template with non-empty string (truthy)",
+			promptName: "conditional_greeting",
+			promptArgs: map[string]string{
+				"name":               "David",
+				"show_extra_message": "yes", // Non-empty string (truthy)
+			},
+			expectedDescription: "Conditional greeting template",
+			expectedContent:     "Hello David!\nThis is an extra message just for you.\nHave a good day.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var getReq mcp.GetPromptRequest
+			getReq.Params.Name = tt.promptName
+			getReq.Params.Arguments = tt.promptArgs
+			getResult, err := srv.Client().GetPrompt(ctx, getReq)
+			if err != nil {
+				t.Fatalf("GetPrompt failed: %v", err)
+			}
+
+			if getResult.Description != tt.expectedDescription {
+				t.Errorf("Expected prompt description %q, got %q", tt.expectedDescription, getResult.Description)
+			}
+
+			if len(getResult.Messages) != 1 {
+				t.Fatalf("Expected 1 message, got %d", len(getResult.Messages))
+			}
+
+			content, ok := getResult.Messages[0].Content.(mcp.TextContent)
+			if !ok {
+				t.Fatalf("Expected TextContent, got %T", getResult.Messages[0].Content)
+			}
+			
+			actualContent := normalizeNewlines(content.Text)
+			if actualContent != tt.expectedContent {
+				t.Errorf("Expected content %q, got %q", tt.expectedContent, actualContent)
+			}
+		})
+	}
 }
