@@ -8,7 +8,8 @@ It allows you to create reusable prompt templates with variable placeholders, co
 - Go `text/template` syntax with variables, conditionals, loops, and partials
 - Automatic JSON argument parsing with string fallback
 - Environment variable injection and built-in functions
-- Compatible with Claude Desktop and other MCP clients
+- Efficient file watching with hot-reload capabilities using fsnotify
+- Compatible with Claude Desktop, Claude Code, and other MCP clients
 
 ## Installation
 
@@ -195,10 +196,15 @@ In the Claude Desktop configuration above, the `"env"` section allows you to def
    - Extracts template variables by analyzing the template content and its used partials
    - Only partials that are actually referenced by the template are included
    - Template arguments are extracted from patterns like `{{.fieldname}}` and `dict "key" .value`
-   - Note: Adding new templates or variables requires a server restart
+   - Sets up efficient file watching using fsnotify for hot-reload capabilities
 
-2. **Prompt request processing**: When a prompt is requested:
-   - Re-reads and re-parses the template file to ensure latest version
+2. **File watching and hot-reload**: The server automatically detects changes:
+   - Monitors the prompts directory for file modifications, additions, and removals
+   - Automatically reloads templates when changes are detected
+   - No server restart required when adding new templates or modifying existing ones
+
+3. **Prompt request processing**: When a prompt is requested:
+   - Uses the latest version of templates (automatically reloaded if changed)
    - Prepares template data with built-in variables (like `date`)
    - Merges environment variables and request parameters
    - Executes the template with all data
