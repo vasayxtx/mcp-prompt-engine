@@ -1,7 +1,5 @@
 {{/* Template with logical operators (and/or) in if blocks */}}
-{{- define "logical_operators" -}}
 {{if and .is_admin .has_permission}}Admin Access: You have full access to {{.resource}}.{{end}}
 {{if or .show_warning .show_error}}Alert: {{.message}}{{end}}
 {{if and (or .is_premium .is_trial) .feature_enabled}}Premium Feature: {{.feature_name}} is available.{{end}}
 User: {{.username}}
-{{- end -}}

@@ -64,6 +64,9 @@ func (pp *PromptsParser) ExtractPromptArgumentsFromTemplate(
 ) ([]string, error) {
 	targetTemplate := tmpl.Lookup(templateName)
 	if targetTemplate == nil {
+		if strings.HasSuffix(templateName, templateExt) {
+			return nil, fmt.Errorf("template %q not found", templateName)
+		}
 		if targetTemplate = tmpl.Lookup(templateName + templateExt); targetTemplate == nil {
 			return nil, fmt.Errorf("template %q or %q not found", templateName, templateName+templateExt)
 		}
@@ -181,13 +184,14 @@ func (pp *PromptsParser) walkNodes(
 			processedTemplates[templateName] = true
 			// Try to find the template by name or name + extension
 			var referencedTemplate *template.Template
-			if referencedTemplate = tmpl.Lookup(templateName); referencedTemplate == nil {
+			if referencedTemplate = tmpl.Lookup(templateName); referencedTemplate == nil && !strings.HasSuffix(templateName, templateExt) {
 				referencedTemplate = tmpl.Lookup(templateName + templateExt)
 			}
-			if referencedTemplate != nil && referencedTemplate.Tree != nil {
-				if err := pp.walkNodes(referencedTemplate.Root, argsMap, builtInFields, tmpl, processedTemplates, append(path, templateName)); err != nil {
-					return err
-				}
+			if referencedTemplate == nil || referencedTemplate.Tree == nil {
+				return fmt.Errorf("referenced template %q not found in %q", templateName, tmpl.Name())
+			}
+			if err := pp.walkNodes(referencedTemplate.Root, argsMap, builtInFields, tmpl, processedTemplates, append(path, templateName)); err != nil {
+				return err
 			}
 		}
 		return pp.walkNodes(n.Pipe, argsMap, builtInFields, tmpl, processedTemplates, path)

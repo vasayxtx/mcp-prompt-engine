@@ -1,15 +1,17 @@
 # MCP Prompt Engine
 
-A simple Model Control Protocol (MCP) server for managing and serving dynamic prompt templates using Go's `text/template` engine.
-It allows you to create reusable prompt templates with variable placeholders, conditionals, loops, and partials that can be filled in at runtime.
+A Model Control Protocol (MCP) server for managing and serving dynamic prompt templates using Go's `text/template` engine.
+It allows you to create reusable prompt templates with variable placeholders, partials, conditionals, and loops that can be filled in at runtime.
 
 ## Features
 
-- Go `text/template` syntax with variables, conditionals, loops, and partials
-- Automatic JSON argument parsing with string fallback
-- Environment variable injection and built-in functions
-- Efficient file watching with hot-reload capabilities using fsnotify
-- Compatible with Claude Desktop, Claude Code, and other MCP clients
+- **Rich CLI Interface**: Modern command-line interface with subcommands, colored output, and comprehensive help
+- **Template Management**: List, validate, and render templates directly from the command line
+- **Go Template Engine**: Full `text/template` syntax with variables, partials, conditionals, and loops
+- **Automatic JSON Parsing**: Intelligent argument parsing with JSON support and string fallback
+- **Environment Variables**: Automatic injection of environment variables into templates
+- **Hot-Reload**: Efficient file watching with automatic template reloading using fsnotify
+- **MCP Compatible**: Works seamlessly with Claude Desktop, Claude Code, and other MCP clients
 
 ## Installation
 
@@ -135,28 +137,80 @@ Please conduct a comprehensive code review focusing on the following aspects:
 Remember to be specific in your recommendations, providing clear guidance on how to improve the code.
 ```
 
-### Running the Server
+## CLI Usage
+
+The MCP Prompt Engine provides a modern command-line interface with multiple subcommands for different operations.
+
+### Basic Commands
 
 ```bash
-./mcp-prompt-engine -prompts /path/to/prompts/directory -log-file /path/to/log/file
+# Show help and available commands
+mcp-prompt-engine --help
+
+# Show version information
+mcp-prompt-engine --version
 ```
 
-### Rendering a Template to Stdout
-
-You can also render a specific template directly to stdout without starting the server:
+### Starting the MCP Server
 
 ```bash
-./mcp-prompt-engine -prompts /path/to/prompts/directory -template template_name
+# Start the server with default settings
+mcp-prompt-engine serve
+
+# Start with custom prompts directory and options
+mcp-prompt-engine --prompts /path/to/prompts serve --log-file /path/to/log/file --quiet
+
+# Start with JSON argument parsing disabled
+mcp-prompt-engine serve --disable-json-args
 ```
 
-This is useful for testing templates or using them in shell scripts.
+### Template Management
 
-Options:
-- `-prompts`: Directory containing prompt template files (default: "./prompts")
-- `-log-file`: Path to log file (if not specified, logs to stdout)
-- `-template`: Template name to render to stdout (bypasses server mode)
-- `-disable-json-args`: Disable JSON argument parsing, treat all arguments as strings
-- `-version`: Show version and exit
+**List available templates:**
+```bash
+# Simple list
+mcp-prompt-engine list
+
+# Detailed list with descriptions and variables
+mcp-prompt-engine --prompts /path/to/prompts list --verbose
+```
+
+**Render a template to stdout:**
+```bash
+# Render a specific template
+mcp-prompt-engine render template_name
+
+# Render with custom prompts directory
+mcp-prompt-engine --prompts /path/to/prompts render code_review
+```
+
+**Validate template syntax:**
+```bash
+# Validate all templates
+mcp-prompt-engine validate
+
+# Validate a specific template
+mcp-prompt-engine validate template_name
+```
+
+### Global Options
+
+- `--prompts, -p`: Directory containing prompt template files (default: "./prompts")
+  - Can also be set via `MCP_PROMPTS_DIR` environment variable
+- `--help, -h`: Show help information
+- `--version, -v`: Show version information
+
+### Serve Command Options
+
+- `--log-file`: Path to log file (if not specified, logs to stdout)
+- `--disable-json-args`: Disable JSON argument parsing, treat all arguments as strings
+- `--quiet`: Suppress non-essential output for cleaner logs
+
+### List Command Options
+
+- `--verbose`: Show detailed information including template descriptions and variables
+
+The CLI provides colored output and helpful error messages to improve the user experience.
 
 ## Configuring Claude Desktop
 
@@ -167,12 +221,15 @@ To use this MCP server with Claude Desktop, add the following configuration to y
   "custom-prompts": {
     "command": "/path/to/mcp-prompt-engine",
     "args": [
-      "-prompts",
+      "--prompts",
       "/path/to/directory/with/prompts",
-      "-log-file",
-      "/path/to/log/file"
+      "serve",
+      "--log-file",
+      "/path/to/log/file",
+      "--quiet"
     ],
     "env": {
+      "MCP_PROMPTS_DIR": "/path/to/directory/with/prompts",
       "CONTEXT": "Default context value",
       "PROJECT_ROOT": "/path/to/project"
     }
@@ -180,8 +237,14 @@ To use this MCP server with Claude Desktop, add the following configuration to y
 }
 ```
 
-### Environment Variable Injection
+### Environment Variable Configuration
 
+The server supports environment variable configuration and injection:
+
+**Configuration via Environment Variables:**
+- `MCP_PROMPTS_DIR`: Set the default prompts directory (equivalent to `--prompts` flag)
+
+**Template Variable Injection:**
 The server automatically injects environment variables into your prompts. If an environment variable with the same name as a template variable (in uppercase) is found, it will be used to fill the template.
 
 For example, if your prompt contains `{{.username}}` and you set the environment variable `USERNAME=john`, the server will automatically replace `{{.username}}` with `john` in the prompt.
@@ -190,20 +253,27 @@ In the Claude Desktop configuration above, the `"env"` section allows you to def
 
 ## How It Works
 
-1. **Server startup**: The server parses all `.tmpl` files on startup:
+1. **CLI Interface**: The application uses a modern CLI framework:
+   - Built with [urfave/cli/v3](https://github.com/urfave/cli) for robust command-line interface
+   - Colored output using [fatih/color](https://github.com/fatih/color) for better user experience
+   - Hierarchical command structure with global and command-specific options
+   - Comprehensive help system and error handling
+
+2. **Server startup**: The server parses all `.tmpl` files on startup:
    - Loads partials (files starting with `_`) for reuse
    - Loads main prompt templates (files not starting with `_`)
    - Extracts template variables by analyzing the template content and its used partials
    - Only partials that are actually referenced by the template are included
    - Template arguments are extracted from patterns like `{{.fieldname}}` and `dict "key" .value`
    - Sets up efficient file watching using fsnotify for hot-reload capabilities
+   - Provides startup feedback with template count and status indicators
 
-2. **File watching and hot-reload**: The server automatically detects changes:
+3. **File watching and hot-reload**: The server automatically detects changes:
    - Monitors the prompts directory for file modifications, additions, and removals
    - Automatically reloads templates when changes are detected
    - No server restart required when adding new templates or modifying existing ones
 
-3. **Prompt request processing**: When a prompt is requested:
+4. **Prompt request processing**: When a prompt is requested:
    - Uses the latest version of templates (automatically reloaded if changed)
    - Prepares template data with built-in variables (like `date`)
    - Merges environment variables and request parameters
