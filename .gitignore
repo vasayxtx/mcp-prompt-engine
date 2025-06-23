@@ -3,3 +3,4 @@ vendor/
 mcp-prompt-engine
 coverage.out
 *.log
+.mcp.json
