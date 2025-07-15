@@ -71,7 +71,7 @@ func (s *PromptsParserTestSuite) TestExtractTemplateArgumentsFromTemplate() {
 		{
 			name:        "template with used partial only",
 			content:     "{{/* Template with used partial only */}}\n{{template \"_header\" dict \"role\" .role \"task\" .task}}\nUser: {{.username}}",
-			partials:    map[string]string{"header": "You are {{.role}} doing {{.task}}", "footer": "End with {{.conclusion}}"},
+			partials:    map[string]string{"_header": "You are {{.role}} doing {{.task}}", "_footer": "End with {{.conclusion}}"},
 			expected:    []string{"role", "task", "username"}, // should NOT include conclusion from unused footer
 			description: "Template with used partial only",
 			shouldError: false,
@@ -79,7 +79,7 @@ func (s *PromptsParserTestSuite) TestExtractTemplateArgumentsFromTemplate() {
 		{
 			name:        "template with multiple used partials",
 			content:     "{{/* Template with multiple partials */}}\n{{template \"_header\" dict \"role\" .role}}\n{{template \"_footer\" dict \"conclusion\" .conclusion}}\nUser: {{.username}}",
-			partials:    map[string]string{"header": "You are {{.role}}", "footer": "End with {{.conclusion}}", "unused": "This has {{.unused_var}}"},
+			partials:    map[string]string{"_header": "You are {{.role}}", "_footer": "End with {{.conclusion}}", "_unused": "This has {{.unused_var}}"},
 			expected:    []string{"role", "conclusion", "username"}, // should NOT include unused_var
 			description: "Template with multiple partials",
 			shouldError: false,

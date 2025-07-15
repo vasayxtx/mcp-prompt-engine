@@ -59,7 +59,7 @@ func NewPromptsServer(
 
 	})
 	mcpServer := server.NewMCPServer(
-		"Custom Prompts Server",
+		"Prompts Engine MCP Server",
 		"1.0.0",
 		server.WithLogging(),
 		server.WithRecovery(),
@@ -139,19 +139,15 @@ func (ps *PromptsServer) loadServerPrompts() ([]server.ServerPrompt, error) {
 
 	var serverPrompts []server.ServerPrompt
 	for _, file := range files {
-		if !file.Type().IsRegular() || !strings.HasSuffix(file.Name(), templateExt) || strings.HasPrefix(file.Name(), "_") {
+		if !isTemplateFile(file) {
 			continue
 		}
 
 		filePath := filepath.Join(ps.promptsDir, file.Name())
-		promptName := strings.TrimSuffix(file.Name(), templateExt)
 
-		templateName := promptName
+		templateName := file.Name()
 		if tmpl.Lookup(templateName) == nil {
-			if tmpl.Lookup(templateName+templateExt) == nil {
-				return nil, fmt.Errorf("template %q or %q not found", templateName, templateName+templateExt)
-			}
-			templateName = templateName + templateExt
+			return nil, fmt.Errorf("template %q not found", templateName)
 		}
 
 		var description string
@@ -160,7 +156,7 @@ func (ps *PromptsServer) loadServerPrompts() ([]server.ServerPrompt, error) {
 		}
 
 		var args []string
-		if args, err = ps.parser.ExtractPromptArgumentsFromTemplate(tmpl, promptName); err != nil {
+		if args, err = ps.parser.ExtractPromptArgumentsFromTemplate(tmpl, templateName); err != nil {
 			return nil, fmt.Errorf("extract prompt arguments from %q template file: %w", filePath, err)
 		}
 
@@ -182,6 +178,8 @@ func (ps *PromptsServer) loadServerPrompts() ([]server.ServerPrompt, error) {
 		for _, promptArg := range promptArgs {
 			promptOpts = append(promptOpts, mcp.WithArgument(promptArg, mcp.RequiredArgument()))
 		}
+
+		promptName := strings.TrimSuffix(file.Name(), templateExt)
 
 		serverPrompts = append(serverPrompts, server.ServerPrompt{
 			Prompt:  mcp.NewPrompt(promptName, promptOpts...),
@@ -293,4 +291,8 @@ func parseMCPArgs(args map[string]string, enableJSONArgs bool, data map[string]i
 		}
 		data[key] = value
 	}
+}
+
+func isTemplateFile(file os.DirEntry) bool {
+	return file.Type().IsRegular() && strings.HasSuffix(file.Name(), templateExt) && !strings.HasPrefix(file.Name(), "_")
 }
