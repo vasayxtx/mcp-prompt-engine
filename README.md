@@ -25,6 +25,20 @@ go install github.com/vasayxtx/mcp-prompt-engine@latest
 make build
 ```
 
+### Docker
+
+Run the MCP server in a Docker container:
+
+```bash
+# Build the Docker image
+make docker-build
+
+# Run the server with mounted volumes
+make docker-run
+```
+
+The Docker container runs as a non-root user and mounts the `prompts` and `logs` directories from the host system.
+
 ## Usage
 
 ### Creating Prompt Templates
@@ -218,21 +232,32 @@ To use this MCP server with Claude Desktop, add the following configuration to y
 
 ```json
 {
-  "custom-prompts": {
+  "my-prompts": {
     "command": "/path/to/mcp-prompt-engine",
     "args": [
       "--prompts",
-      "/path/to/directory/with/prompts",
+      "/path/to/prompts/dir",
       "serve",
       "--log-file",
       "/path/to/log/file",
       "--quiet"
-    ],
-    "env": {
-      "MCP_PROMPTS_DIR": "/path/to/directory/with/prompts",
-      "CONTEXT": "Default context value",
-      "PROJECT_ROOT": "/path/to/project"
-    }
+    ]
+  }
+}
+```
+
+If you want to run the server within a Docker container, you can use the following configuration:
+
+```json
+{
+  "mcp-prompt-engine": {
+    "command": "docker",
+    "args": [
+      "run", "-i", "--rm",
+      "-v", "/path/to/prompts/dir:/app/prompts:ro",
+      "-v", "/path/to/logs/dir:/app/logs",
+      "mcp-prompt-engine"
+    ]
   }
 }
 ```

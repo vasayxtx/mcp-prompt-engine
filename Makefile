@@ -28,3 +28,13 @@ test:
 	else \
 		echo "Coverage check passed: $$real_coverage% meets the minimum requirement of $$min_coverage%"; \
 	fi
+
+.PHONY: docker-build
+docker-build:
+	@echo "Building Docker image..."
+	docker build -t mcp-prompt-engine .
+
+.PHONY: docker-run
+docker-run:
+	@echo "Running MCP server with mounted prompts and logs directories..."
+	docker run -i --rm -v "$(PWD)/prompts:/app/prompts:ro" -v "$(PWD)/logs:/app/logs" mcp-prompt-engine
