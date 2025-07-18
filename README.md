@@ -15,6 +15,12 @@ It allows you to create reusable prompt templates with variable placeholders, pa
 
 ## Installation
 
+### Pre-built Binaries
+
+Download the latest release from [GitHub Releases](https://github.com/vasayxtx/mcp-prompt-engine/releases) for your platform.
+
+### Go Install
+
 ```bash
 go install github.com/vasayxtx/mcp-prompt-engine@latest
 ```
@@ -27,7 +33,17 @@ make build
 
 ### Docker
 
-Run the MCP server in a Docker container:
+Run the MCP server in a Docker container using the pre-built image:
+
+```bash
+# Run using the pre-built Docker image
+docker run -i --rm \
+  -v /path/to/prompts:/app/prompts:ro \
+  -v /path/to/logs:/app/logs \
+  ghcr.io/vasayxtx/mcp-prompt-engine
+```
+
+Or build and run locally:
 
 ```bash
 # Build the Docker image
@@ -256,7 +272,7 @@ If you want to run the server within a Docker container, you can use the followi
       "run", "-i", "--rm",
       "-v", "/path/to/prompts/dir:/app/prompts:ro",
       "-v", "/path/to/logs/dir:/app/logs",
-      "mcp-prompt-engine"
+      "ghcr.io/vasayxtx/mcp-prompt-engine"
     ]
   }
 }
