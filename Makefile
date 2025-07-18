@@ -1,15 +1,12 @@
-# get the latest commit hash in the short form
-COMMIT := $(shell git rev-parse --short HEAD)
-# get the latest commit date in the form of YYYYmmdd
-DATE := $(shell git log -1 --format=%cd --date=format:"%Y%m%d")
+# Build information
+VERSION := $(shell git describe --tags --dirty --always 2>/dev/null || echo "dev")
+COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
+GO_VERSION := $(shell go version | cut -d' ' -f3)
 
-VERSION := $(COMMIT)-$(DATE)
-FLAGS := -ldflags "-w -s -X main.version=$(VERSION)"
-
-.PHONY: build
-build:
-	@echo "Building..."
-	go build $(FLAGS) -trimpath -o mcp-prompt-engine .
+LDFLAGS := -ldflags "-w -s \
+	-X main.version=$(VERSION) \
+	-X main.commit=$(COMMIT) \
+	-X main.goVersion=$(GO_VERSION)"
 
 .PHONY: lint
 lint:
@@ -29,6 +26,11 @@ test:
 		echo "Coverage check passed: $$real_coverage% meets the minimum requirement of $$min_coverage%"; \
 	fi
 
+.PHONY: build
+build:
+	@echo "Building..."
+	go build $(LDFLAGS) -trimpath -o mcp-prompt-engine .
+
 .PHONY: docker-build
 docker-build:
 	@echo "Building Docker image..."
@@ -38,3 +40,13 @@ docker-build:
 docker-run:
 	@echo "Running MCP server with mounted prompts and logs directories..."
 	docker run -i --rm -v "$(PWD)/prompts:/app/prompts:ro" -v "$(PWD)/logs:/app/logs" mcp-prompt-engine
+
+.PHONY: release-dry-run
+release-dry-run:
+	@echo "Running goreleaser in dry-run mode..."
+	GO_VERSION=$(GO_VERSION) goreleaser release --snapshot --clean --skip=publish
+
+.PHONY: release-local
+release-local:
+	@echo "Building release locally..."
+	goreleaser build --snapshot --clean

@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"syscall"
@@ -21,7 +20,11 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-var version = "dev"
+var (
+	version   = "dev"
+	commit    = "unknown"
+	goVersion = "unknown"
+)
 
 const templateExt = ".tmpl"
 
@@ -49,7 +52,7 @@ func main() {
 	cmd := &cli.Command{
 		Name:    "mcp-prompt-engine",
 		Usage:   "A Model Control Protocol server for dynamic prompt templates",
-		Version: fmt.Sprintf("%s (Go %s)", version, runtime.Version()),
+		Version: fmt.Sprintf("%s (commit: %s, go: %s)", version, commit, goVersion),
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "prompts",
@@ -102,8 +105,17 @@ func main() {
 				ArgsUsage: "[template_name]",
 				Action:    validateCommand,
 			},
+			{
+				Name:   "version",
+				Usage:  "Show version information",
+				Action: versionCommand,
+			},
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			// Skip validation for version command
+			if cmd.Name == "version" {
+				return ctx, nil
+			}
 			// Validate prompts directory exists
 			promptsDir := cmd.String("prompts")
 			if _, err := os.Stat(promptsDir); os.IsNotExist(err) {
@@ -173,6 +185,14 @@ func validateCommand(ctx context.Context, cmd *cli.Command) error {
 	if err := validateTemplates(os.Stdout, promptsDir, templateName); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
+	return nil
+}
+
+// versionCommand shows detailed version information
+func versionCommand(ctx context.Context, cmd *cli.Command) error {
+	fmt.Printf("Version:    %s\n", version)
+	fmt.Printf("Commit:     %s\n", commit)
+	fmt.Printf("Go Version: %s\n", goVersion)
 	return nil
 }
 
