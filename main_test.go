@@ -31,7 +31,7 @@ func (s *MainTestSuite) TestRenderTemplateErrorCases() {
 	var buf bytes.Buffer
 
 	// Test non-existent directory
-	err := renderTemplate(&buf, "/non/existent/directory", "template_name")
+	err := renderTemplate(&buf, "/non/existent/directory", "template_name", nil, true)
 	assert.Error(s.T(), err, "renderTemplate() expected error for non-existent directory")
 
 	// Test template execution error with missing template
@@ -41,37 +41,64 @@ func (s *MainTestSuite) TestRenderTemplateErrorCases() {
 	require.NoError(s.T(), err, "Failed to write test file")
 
 	var errorBuf bytes.Buffer
-	err = renderTemplate(&errorBuf, s.tempDir, "error")
+	err = renderTemplate(&errorBuf, s.tempDir, "error", nil, true)
 	assert.Error(s.T(), err, "renderTemplate() expected execution error for missing template")
 
 	// Test error with non-existent template in renderTemplate
 	var nonExistentBuf bytes.Buffer
-	err = renderTemplate(&nonExistentBuf, s.tempDir, "does_not_exist")
+	err = renderTemplate(&nonExistentBuf, s.tempDir, "does_not_exist", nil, true)
 	assert.Error(s.T(), err, "renderTemplate() expected error for non-existent template")
 }
 
-// TestRenderTemplate tests template rendering with environment variables
+// TestRenderTemplate tests template rendering with environment variables and CLI arguments
 func (s *MainTestSuite) TestRenderTemplate() {
 	tests := []struct {
 		name           string
 		templateName   string
+		cliArgs        map[string]string
 		envVars        map[string]string
+		enableJSONArgs bool
 		expectedOutput string
 		shouldError    bool
 	}{
 		{
-			name:           "greeting template, env var not set",
+			name:           "greeting template, no vars set",
 			templateName:   "greeting",
-			expectedOutput: "Hello {{ name }}!\nHave a great day!",
+			enableJSONArgs: true,
+			expectedOutput: "Hello <no value>!\nHave a great day!",
 			shouldError:    false,
 		},
 		{
-			name:         "greeting template",
+			name:         "greeting template with env var",
 			templateName: "greeting",
 			envVars: map[string]string{
 				"NAME": "John",
 			},
+			enableJSONArgs: true,
 			expectedOutput: "Hello John!\nHave a great day!",
+			shouldError:    false,
+		},
+		{
+			name:         "greeting template with CLI arg",
+			templateName: "greeting",
+			cliArgs: map[string]string{
+				"name": "Alice",
+			},
+			enableJSONArgs: true,
+			expectedOutput: "Hello Alice!\nHave a great day!",
+			shouldError:    false,
+		},
+		{
+			name:         "CLI args override env vars",
+			templateName: "greeting",
+			cliArgs: map[string]string{
+				"name": "CLI_User",
+			},
+			envVars: map[string]string{
+				"NAME": "ENV_User",
+			},
+			enableJSONArgs: true,
+			expectedOutput: "Hello CLI_User!\nHave a great day!",
 			shouldError:    false,
 		},
 		{
@@ -82,11 +109,12 @@ func (s *MainTestSuite) TestRenderTemplate() {
 				"NAME":    "Bob",
 				"VERSION": "1.0.0",
 			},
-			expectedOutput: "# Test Document\nCreated by: {{ author }}\n## Description\n{{ description }}\n## Details\nThis is a test template with multiple partials.\nHello Bob!\nVersion: 1.0.0",
+			enableJSONArgs: true,
+			expectedOutput: "# Test Document\nCreated by: <no value>\n## Description\n<no value>\n## Details\nThis is a test template with multiple partials.\nHello Bob!\nVersion: 1.0.0",
 			shouldError:    false,
 		},
 		{
-			name:         "template with partials",
+			name:         "template with partials, all env vars set",
 			templateName: "multiple_partials",
 			envVars: map[string]string{
 				"TITLE":       "Test Document",
@@ -96,26 +124,63 @@ func (s *MainTestSuite) TestRenderTemplate() {
 				"VERSION":     "1.0.0",
 			},
 			expectedOutput: "# Test Document\nCreated by: Test Author\n## Description\nThis is a test description\n## Details\nThis is a test template with multiple partials.\nHello Bob!\nVersion: 1.0.0",
+			enableJSONArgs: true,
 			shouldError:    false,
 		},
 		{
-			name:         "conditional greeting, show extra message true",
+			name:         "conditional greeting with env vars, show extra message true",
 			templateName: "conditional_greeting",
 			envVars: map[string]string{
 				"NAME":               "Alice",
 				"SHOW_EXTRA_MESSAGE": "true",
 			},
 			expectedOutput: "Hello Alice!\nThis is an extra message just for you.\nHave a good day.",
+			enableJSONArgs: true,
 			shouldError:    false,
 		},
 		{
-			name:         "conditional greeting, show extra message false",
+			name:         "conditional greeting with env vars, show extra message false",
 			templateName: "conditional_greeting",
 			envVars: map[string]string{
 				"NAME":               "Bob",
 				"SHOW_EXTRA_MESSAGE": "",
 			},
 			expectedOutput: "Hello Bob!\nHave a good day.",
+			enableJSONArgs: true,
+			shouldError:    false,
+		},
+		{
+			name:         "conditional greeting with multiple CLI args",
+			templateName: "conditional_greeting",
+			cliArgs: map[string]string{
+				"name":               "Bob",
+				"show_extra_message": "true",
+			},
+			expectedOutput: "Hello Bob!\nThis is an extra message just for you.\nHave a good day.",
+			enableJSONArgs: true,
+			shouldError:    false,
+		},
+		{
+			name:         "mix CLI args and env vars",
+			templateName: "conditional_greeting",
+			cliArgs: map[string]string{
+				"name": "Charlie",
+			},
+			envVars: map[string]string{
+				"SHOW_EXTRA_MESSAGE": "true",
+			},
+			expectedOutput: "Hello Charlie!\nThis is an extra message just for you.\nHave a good day.",
+			enableJSONArgs: true,
+			shouldError:    false,
+		},
+		{
+			name:         "CLI arg with empty value",
+			templateName: "greeting",
+			cliArgs: map[string]string{
+				"name": "",
+			},
+			expectedOutput: "Hello !\nHave a great day!",
+			enableJSONArgs: true,
 			shouldError:    false,
 		},
 		{
@@ -135,12 +200,57 @@ func (s *MainTestSuite) TestRenderTemplate() {
 				"USERNAME":        "admin_user",
 			},
 			expectedOutput: "Admin Access: You have full access to server logs.\nAlert: System maintenance scheduled\nPremium Feature: Advanced Analytics is available.\nUser: admin_user",
+			enableJSONArgs: true,
+			shouldError:    false,
+		},
+		{
+			name:         "JSON parsing enabled - boolean true",
+			templateName: "conditional_greeting",
+			cliArgs: map[string]string{
+				"name":               "JSONUser",
+				"show_extra_message": "true",
+			},
+			expectedOutput: "Hello JSONUser!\nThis is an extra message just for you.\nHave a good day.",
+			enableJSONArgs: true,
+			shouldError:    false,
+		},
+		{
+			name:         "JSON parsing enabled - boolean false",
+			templateName: "conditional_greeting",
+			cliArgs: map[string]string{
+				"name":               "JSONUser",
+				"show_extra_message": "false",
+			},
+			expectedOutput: "Hello JSONUser!\nHave a good day.",
+			enableJSONArgs: true,
+			shouldError:    false,
+		},
+		{
+			name:         "JSON parsing disabled - boolean string remains string",
+			templateName: "conditional_greeting",
+			cliArgs: map[string]string{
+				"name":               "StringUser",
+				"show_extra_message": "true",
+			},
+			enableJSONArgs: false,
+			expectedOutput: "Hello StringUser!\nThis is an extra message just for you.\nHave a good day.",
+			shouldError:    false,
+		},
+		{
+			name:         "JSON parsing disabled - false string treated as truthy",
+			templateName: "conditional_greeting",
+			cliArgs: map[string]string{
+				"name":               "StringUser",
+				"show_extra_message": "false",
+			},
+			enableJSONArgs: false,
+			expectedOutput: "Hello StringUser!\nThis is an extra message just for you.\nHave a good day.",
 			shouldError:    false,
 		},
 		{
 			name:           "non-existent template",
 			templateName:   "non_existent_template",
-			envVars:        map[string]string{},
+			enableJSONArgs: true,
 			expectedOutput: "",
 			shouldError:    true,
 		},
@@ -171,7 +281,7 @@ func (s *MainTestSuite) TestRenderTemplate() {
 			}
 
 			var buf bytes.Buffer
-			err := renderTemplate(&buf, "./testdata", tt.templateName)
+			err := renderTemplate(&buf, "./testdata", tt.templateName, tt.cliArgs, tt.enableJSONArgs)
 
 			if tt.shouldError {
 				assert.Error(s.T(), err, "expected error but got none")
