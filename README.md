@@ -179,6 +179,9 @@ mcp-prompt-engine --help
 
 # Show version information
 mcp-prompt-engine --version
+
+# Control colored output (auto, always, never)
+mcp-prompt-engine --color=never list
 ```
 
 ### Starting the MCP Server
@@ -212,6 +215,12 @@ mcp-prompt-engine render template_name
 
 # Render with custom prompts directory
 mcp-prompt-engine --prompts /path/to/prompts render code_review
+
+# Render with CLI arguments
+mcp-prompt-engine render greeting --arg name=John --arg show_extra_message=true
+
+# Render with string-only mode (disable JSON parsing)
+mcp-prompt-engine render greeting --arg name=John --disable-json-args
 ```
 
 **Validate template syntax:**
@@ -227,6 +236,10 @@ mcp-prompt-engine validate template_name
 
 - `--prompts, -p`: Directory containing prompt template files (default: "./prompts")
   - Can also be set via `MCP_PROMPTS_DIR` environment variable
+- `--color`: Control colored output: `auto` (default), `always`, or `never`
+  - `auto`: Use colors only when outputting to a terminal
+  - `always`: Always use colors regardless of output destination
+  - `never`: Never use colors
 - `--help, -h`: Show help information
 - `--version, -v`: Show version information
 
@@ -235,6 +248,13 @@ mcp-prompt-engine validate template_name
 - `--log-file`: Path to log file (if not specified, logs to stdout)
 - `--disable-json-args`: Disable JSON argument parsing, treat all arguments as strings
 - `--quiet`: Suppress non-essential output for cleaner logs
+
+### Render Command Options
+
+- `--arg, -a`: Template argument in name=value format (repeatable)
+  - CLI arguments take precedence over environment variables
+  - JSON values are automatically parsed when possible (e.g., `true`, `false`, numbers, arrays, objects)
+- `--disable-json-args`: Disable JSON parsing for arguments, treat all values as strings
 
 ### List Command Options
 
@@ -286,9 +306,16 @@ The server supports environment variable configuration and injection:
 - `MCP_PROMPTS_DIR`: Set the default prompts directory (equivalent to `--prompts` flag)
 
 **Template Variable Injection:**
-The server automatically injects environment variables into your prompts. If an environment variable with the same name as a template variable (in uppercase) is found, it will be used to fill the template.
+The server supports multiple ways to provide values for template variables:
 
-For example, if your prompt contains `{{.username}}` and you set the environment variable `USERNAME=john`, the server will automatically replace `{{.username}}` with `john` in the prompt.
+1. **CLI Arguments** (highest priority): Use `--arg name=value` when rendering templates
+2. **Environment Variables**: Automatically injected if an environment variable with the same name as a template variable (in uppercase) is found
+
+For example:
+- CLI argument: `mcp-prompt-engine render greeting --arg username=john`
+- Environment variable: If your prompt contains `{{.username}}` and you set `USERNAME=john`, it will be automatically used
+
+CLI arguments take precedence over environment variables, allowing you to override defaults on a per-render basis.
 
 In the Claude Desktop configuration above, the `"env"` section allows you to define environment variables that will be injected into your prompts.
 
