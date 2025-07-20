@@ -79,6 +79,17 @@ func main() {
 				Usage:     "Render a template to stdout",
 				ArgsUsage: "<template_name>",
 				Action:    renderCommand,
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{
+						Name:    "arg",
+						Aliases: []string{"a"},
+						Usage:   "Template argument in name=value format (repeatable)",
+					},
+					&cli.BoolFlag{
+						Name:  "disable-json-args",
+						Usage: "Disable JSON parsing for arguments (use string-only mode)",
+					},
+				},
 			},
 			{
 				Name:   "list",
@@ -146,8 +157,20 @@ func renderCommand(ctx context.Context, cmd *cli.Command) error {
 
 	promptsDir := cmd.String("prompts")
 	templateName := cmd.Args().First()
+	args := cmd.StringSlice("arg")
+	enableJSONArgs := !cmd.Bool("disable-json-args")
 
-	if err := renderTemplate(os.Stdout, promptsDir, templateName); err != nil {
+	// Parse args into a map
+	argMap := make(map[string]string)
+	for _, arg := range args {
+		parts := strings.SplitN(arg, "=", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid argument format '%s', expected name=value", arg)
+		}
+		argMap[parts[0]] = parts[1]
+	}
+
+	if err := renderTemplate(os.Stdout, promptsDir, templateName, argMap, enableJSONArgs); err != nil {
 		return fmt.Errorf("%s '%s': %w", errorText("failed to render template"), templateText(templateName), err)
 	}
 	return nil
@@ -237,7 +260,7 @@ func runStdioMCPServer(w io.Writer, promptsDir string, logFile string, enableJSO
 }
 
 // renderTemplate renders a specified template to stdout with resolved partials and environment variables
-func renderTemplate(w io.Writer, promptsDir string, templateName string) error {
+func renderTemplate(w io.Writer, promptsDir string, templateName string, cliArgs map[string]string, enableJSONArgs bool) error {
 	templateName = strings.TrimSpace(templateName)
 	if templateName == "" {
 		return fmt.Errorf("template name is required")
@@ -278,14 +301,18 @@ func renderTemplate(w io.Writer, promptsDir string, templateName string) error {
 	data := make(map[string]interface{})
 	data["date"] = time.Now().Format("2006-01-02 15:04:05")
 
-	// Add environment variables to data map
+	// Parse CLI args with JSON support if enabled
+	parseMCPArgs(cliArgs, enableJSONArgs, data)
+
+	// Resolve variables from CLI args and environment variables
 	for _, arg := range args {
-		// Convert arg to TITLE_CASE for env var
-		envVarName := strings.ToUpper(arg)
-		if envValue, exists := os.LookupEnv(envVarName); exists {
-			data[arg] = envValue
-		} else {
-			data[arg] = "{{ " + arg + " }}"
+		// Check if already set by CLI args (highest priority)
+		if _, exists := data[arg]; !exists {
+			// Fall back to environment variables
+			envVarName := strings.ToUpper(arg)
+			if envValue, envExists := os.LookupEnv(envVarName); envExists {
+				data[arg] = envValue
+			}
 		}
 	}
 
