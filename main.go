@@ -16,7 +16,6 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/fatih/color"
 	"github.com/urfave/cli/v3"
 )
 
@@ -27,26 +26,6 @@ var (
 )
 
 const templateExt = ".tmpl"
-
-// Color utility functions for consistent styling
-var (
-	// Status indicators
-	successIcon = color.New(color.FgGreen, color.Bold).SprintFunc()("✓")
-	errorIcon   = color.New(color.FgRed, color.Bold).SprintFunc()("✗")
-	warningIcon = color.New(color.FgYellow, color.Bold).SprintFunc()("⚠")
-	_           = color.New(color.FgBlue, color.Bold).SprintFunc() // infoIcon
-
-	// Text colors
-	successText   = color.New(color.FgGreen).SprintFunc()
-	errorText     = color.New(color.FgRed).SprintFunc()
-	_             = color.New(color.FgYellow).SprintFunc() // warningText
-	infoText      = color.New(color.FgBlue).SprintFunc()
-	highlightText = color.New(color.FgCyan, color.Bold).SprintFunc()
-
-	// Specific formatters
-	templateText = color.New(color.FgMagenta, color.Bold).SprintFunc()
-	pathText     = color.New(color.FgBlue).SprintFunc()
-)
 
 func main() {
 	cmd := &cli.Command{
@@ -60,6 +39,19 @@ func main() {
 				Value:   "./prompts",
 				Usage:   "Directory containing prompt template files",
 				Sources: cli.EnvVars("MCP_PROMPTS_DIR"),
+			},
+			&cli.StringFlag{
+				Name:    "color",
+				Value:   "auto",
+				Usage:   "Colorize output: " + colorModesCommaSeparatedList,
+				Sources: cli.EnvVars("NO_COLOR"),
+				Action: func(ctx context.Context, cmd *cli.Command, value string) error {
+					colorMode := ColorMode(value)
+					if colorMode != colorModeAuto && colorMode != colorModeAlways && colorMode != colorModeNever {
+						return fmt.Errorf("invalid color value %q, must be one of: "+colorModesCommaSeparatedList, value)
+					}
+					return nil
+				},
 			},
 		},
 		Commands: []*cli.Command{
@@ -112,6 +104,9 @@ func main() {
 			},
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			colorMode := ColorMode(cmd.String("color"))
+			initializeColors(colorMode)
+
 			// Skip validation for version command
 			if cmd.Name == "version" {
 				return ctx, nil
@@ -137,11 +132,7 @@ func serveCommand(ctx context.Context, cmd *cli.Command) error {
 	enableJSONArgs := !cmd.Bool("disable-json-args")
 	quiet := cmd.Bool("quiet")
 
-	if !quiet {
-		fmt.Printf("%s Loading templates from %s\n", successIcon, pathText(promptsDir))
-	}
-
-	if err := runMCPServer(promptsDir, logFile, enableJSONArgs, quiet); err != nil {
+	if err := runStdioMCPServer(os.Stdout, promptsDir, logFile, enableJSONArgs, quiet); err != nil {
 		return fmt.Errorf("%s: %w", errorText("failed to start MCP server"), err)
 	}
 	return nil
@@ -190,15 +181,15 @@ func validateCommand(ctx context.Context, cmd *cli.Command) error {
 
 // versionCommand shows detailed version information
 func versionCommand(ctx context.Context, cmd *cli.Command) error {
-	fmt.Printf("Version:    %s\n", version)
-	fmt.Printf("Commit:     %s\n", commit)
-	fmt.Printf("Go Version: %s\n", goVersion)
+	mustFprintf(os.Stdout, "Version:    %s\n", version)
+	mustFprintf(os.Stdout, "Commit:     %s\n", commit)
+	mustFprintf(os.Stdout, "Go Version: %s\n", goVersion)
 	return nil
 }
 
-func runMCPServer(promptsDir string, logFile string, enableJSONArgs bool, quiet bool) error {
+func runStdioMCPServer(w io.Writer, promptsDir string, logFile string, enableJSONArgs bool, quiet bool) error {
 	// Configure logger
-	logWriter := os.Stdout
+	logWriter := w
 	if logFile != "" {
 		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
@@ -221,9 +212,9 @@ func runMCPServer(promptsDir string, logFile string, enableJSONArgs bool, quiet 
 		if availableTemplates, err = getAvailableTemplates(promptsDir); err != nil {
 			return fmt.Errorf("get available templates: %w", err)
 		}
-		fmt.Printf("%s Found %s templates\n", successIcon, highlightText(fmt.Sprintf("%d", len(availableTemplates))))
-		fmt.Printf("%s Starting MCP server on %s\n", successIcon, infoText("stdio"))
-		fmt.Printf("%s Server ready - waiting for connections\n", successIcon)
+		mustFprintf(w, "%s Found %s templates\n", successIcon(), highlightText(fmt.Sprintf("%d", len(availableTemplates))))
+		mustFprintf(w, "%s Starting MCP server on %s\n", successIcon(), infoText("stdio"))
+		mustFprintf(w, "%s Server ready - waiting for connections\n", successIcon())
 	}
 
 	defer func() {
@@ -314,9 +305,7 @@ func listTemplates(w io.Writer, promptsDir string, verbose bool) error {
 	}
 	if len(availableTemplates) == 0 {
 		if verbose {
-			if _, ferr := fmt.Fprintf(w, "No templates found in %s\n", pathText(promptsDir)); ferr != nil {
-				return ferr
-			}
+			mustFprintf(w, "No templates found in %s\n", pathText(promptsDir))
 		}
 		return nil
 	}
@@ -326,32 +315,22 @@ func listTemplates(w io.Writer, promptsDir string, verbose bool) error {
 	for _, templateName := range availableTemplates {
 		if !verbose {
 			// Simple list without description and variables
-			if _, ferr := fmt.Fprintf(w, "%s\n", templateText(templateName)); ferr != nil {
-				return ferr
-			}
+			mustFprintf(w, "%s\n", templateText(templateName))
 			continue
 		}
 
-		if _, ferr := fmt.Fprintf(w, "%s\n", templateText(templateName)); ferr != nil {
-			return ferr
-		}
+		mustFprintf(w, "%s\n", templateText(templateName))
 
 		var description string
 		if description, err = parser.ExtractPromptDescriptionFromFile(
 			filepath.Join(promptsDir, templateName),
 		); err != nil {
-			if _, ferr := fmt.Fprintf(w, "%s\n", errorText(fmt.Sprintf("Error: %v", err))); ferr != nil {
-				return ferr
-			}
+			mustFprintf(w, "%s\n", errorText(fmt.Sprintf("Error: %v", err)))
 		} else {
 			if description != "" {
-				if _, ferr := fmt.Fprintf(w, "  Description: %s\n", description); ferr != nil {
-					return ferr
-				}
+				mustFprintf(w, "  Description: %s\n", description)
 			} else {
-				if _, ferr := fmt.Fprintf(w, "  Description:\n"); ferr != nil {
-					return ferr
-				}
+				mustFprintf(w, "  Description:\n")
 			}
 		}
 
@@ -362,18 +341,12 @@ func listTemplates(w io.Writer, promptsDir string, verbose bool) error {
 		}
 		var args []string
 		if args, err = parser.ExtractPromptArgumentsFromTemplate(tmpl, templateName); err != nil {
-			if _, ferr := fmt.Fprintf(w, "%s\n", errorText(fmt.Sprintf("Error: %v", err))); ferr != nil {
-				return ferr
-			}
+			mustFprintf(w, "%s\n", errorText(fmt.Sprintf("Error: %v", err)))
 		} else {
 			if len(args) > 0 {
-				if _, ferr := fmt.Fprintf(w, "  Variables: %s\n", highlightText(strings.Join(args, ", "))); ferr != nil {
-					return ferr
-				}
+				mustFprintf(w, "  Variables: %s\n", highlightText(strings.Join(args, ", ")))
 			} else {
-				if _, ferr := fmt.Fprintf(w, "  Variables:\n"); ferr != nil {
-					return ferr
-				}
+				mustFprintf(w, "  Variables:\n")
 			}
 		}
 	}
@@ -406,9 +379,7 @@ func validateTemplates(w io.Writer, promptsDir string, templateName string) erro
 		}
 	}
 	if len(availableTemplates) == 0 {
-		if _, err := fmt.Fprintf(w, "%s No templates found in %s\n", warningIcon, pathText(promptsDir)); err != nil {
-			return err
-		}
+		mustFprintf(w, "%s No templates found in %s\n", warningIcon(), pathText(promptsDir))
 		return nil
 	}
 
@@ -426,11 +397,11 @@ func validateTemplates(w io.Writer, promptsDir string, templateName string) erro
 		}
 		// Try to extract arguments (this validates basic syntax)
 		if _, err = parser.ExtractPromptArgumentsFromTemplate(tmpl, name); err != nil {
-			fmt.Printf("%s %s - %s\n", errorIcon, templateText(name), errorText(fmt.Sprintf("Error: %v", err)))
+			mustFprintf(w, "%s %s - %s\n", errorIcon(), templateText(name), errorText(fmt.Sprintf("Error: %v", err)))
 			hasErrors = true
 			continue
 		}
-		fmt.Printf("%s %s - %s\n", successIcon, templateText(name), successText("Valid"))
+		mustFprintf(w, "%s %s - %s\n", successIcon(), templateText(name), successText("Valid"))
 	}
 
 	if hasErrors {
@@ -454,4 +425,10 @@ func getAvailableTemplates(promptsDir string) ([]string, error) {
 	}
 	sort.Strings(templateFiles)
 	return templateFiles, nil
+}
+
+func mustFprintf(w io.Writer, format string, a ...interface{}) {
+	if _, err := fmt.Fprintf(w, format, a...); err != nil {
+		panic(fmt.Sprintf("Failed to write output: %v", err))
+	}
 }

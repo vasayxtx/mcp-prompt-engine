@@ -200,23 +200,6 @@ func removeANSIColors(s string) string {
 	return ansiRegex.ReplaceAllString(s, "")
 }
 
-// captureStdout captures stdout during function execution
-func (s *MainTestSuite) captureStdout(f func() error) string {
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err := f()
-	_ = err // We handle the error in the calling function
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	_, _ = buf.ReadFrom(r)
-	return buf.String()
-}
-
 // TestListTemplates tests the listTemplates function
 func (s *MainTestSuite) TestListTemplates() {
 	tests := []struct {
@@ -411,8 +394,8 @@ func (s *MainTestSuite) TestValidateTemplates() {
 			name:         "validate template with missing reference",
 			templateName: "",
 			templates: map[string]string{
-				"valid.tmpl":          "{{/* Valid template */}}\nHello {{.name}}!",
-				"missing_ref.tmpl":    "{{/* Template with missing reference */}}\n{{template \"nonexistent\" .}}",
+				"valid.tmpl":       "{{/* Valid template */}}\nHello {{.name}}!",
+				"missing_ref.tmpl": "{{/* Template with missing reference */}}\n{{template \"nonexistent\" .}}",
 			},
 			expectedOutput: []string{
 				"✗ missing_ref.tmpl - Error:",
@@ -424,8 +407,8 @@ func (s *MainTestSuite) TestValidateTemplates() {
 			name:         "validate specific template with missing reference",
 			templateName: "missing_ref.tmpl",
 			templates: map[string]string{
-				"valid.tmpl":          "{{/* Valid template */}}\nHello {{.name}}!",
-				"missing_ref.tmpl":    "{{/* Template with missing reference */}}\n{{template \"nonexistent\" .}}",
+				"valid.tmpl":       "{{/* Valid template */}}\nHello {{.name}}!",
+				"missing_ref.tmpl": "{{/* Template with missing reference */}}\n{{template \"nonexistent\" .}}",
 			},
 			expectedOutput: []string{
 				"✗ missing_ref.tmpl - Error:",
@@ -455,24 +438,17 @@ func (s *MainTestSuite) TestValidateTemplates() {
 				require.NoError(s.T(), err)
 			}
 
-			// Capture stdout since validateTemplates prints directly to stdout
-			output := s.captureStdout(func() error {
-				var buf bytes.Buffer
-				return validateTemplates(&buf, tempDir, tt.templateName)
-			})
+			// Run validateTemplates and capture output from buffer
+			var buf bytes.Buffer
+			err := validateTemplates(&buf, tempDir, tt.templateName)
 
-			var err error
 			if tt.shouldError {
-				// Run again to get the error
-				var buf bytes.Buffer
-				err = validateTemplates(&buf, tempDir, tt.templateName)
 				assert.Error(s.T(), err, "expected error but got none")
 			} else {
-				var buf bytes.Buffer
-				err = validateTemplates(&buf, tempDir, tt.templateName)
 				require.NoError(s.T(), err, "unexpected error")
 			}
 
+			output := buf.String()
 			lines := strings.Split(strings.TrimSpace(output), "\n")
 
 			// Check that all expected output lines are present
@@ -482,8 +458,8 @@ func (s *MainTestSuite) TestValidateTemplates() {
 					// Remove ANSI color codes for comparison
 					cleanLine := removeANSIColors(line)
 					cleanExpected := removeANSIColors(expectedLine)
-					if strings.Contains(cleanLine, cleanExpected) || 
-					   (strings.Contains(cleanExpected, "Error:") && strings.Contains(cleanLine, "Error:")) {
+					if strings.Contains(cleanLine, cleanExpected) ||
+						(strings.Contains(cleanExpected, "Error:") && strings.Contains(cleanLine, "Error:")) {
 						found = true
 						break
 					}
@@ -497,10 +473,10 @@ func (s *MainTestSuite) TestValidateTemplates() {
 // TestValidateTemplatesErrorCases tests error cases for validateTemplates
 func (s *MainTestSuite) TestValidateTemplatesErrorCases() {
 	tests := []struct {
-		name         string
-		promptsDir   string
-		templateName string
-		setupFunc    func(string) error
+		name          string
+		promptsDir    string
+		templateName  string
+		setupFunc     func(string) error
 		expectedError string
 	}{
 		{
@@ -567,9 +543,9 @@ func (s *MainTestSuite) TestValidateTemplatesErrorCases() {
 func (s *MainTestSuite) TestValidateTemplatesOutput() {
 	// Test with syntax error that occurs during parsing
 	tempDir := s.T().TempDir()
-	
+
 	// Invalid template with syntax error
-	err := os.WriteFile(filepath.Join(tempDir, "invalid.tmpl"), 
+	err := os.WriteFile(filepath.Join(tempDir, "invalid.tmpl"),
 		[]byte("{{/* Invalid template */}}\nHello {{.name}"), 0644)
 	require.NoError(s.T(), err)
 
@@ -580,26 +556,26 @@ func (s *MainTestSuite) TestValidateTemplatesOutput() {
 
 	// Test with valid templates to verify successful output formatting
 	tempDir2 := s.T().TempDir()
-	
+
 	// Valid template
-	err = os.WriteFile(filepath.Join(tempDir2, "valid.tmpl"), 
+	err = os.WriteFile(filepath.Join(tempDir2, "valid.tmpl"),
 		[]byte("{{/* Valid template */}}\nHello {{.name}}!"), 0644)
 	require.NoError(s.T(), err)
 
-	// Capture stdout output
-	output := s.captureStdout(func() error {
-		var buf bytes.Buffer
-		return validateTemplates(&buf, tempDir2, "")
-	})
+	// Run validateTemplates and capture output from buffer
+	var buf2 bytes.Buffer
+	err = validateTemplates(&buf2, tempDir2, "")
+	require.NoError(s.T(), err)
 
+	output := buf2.String()
 	cleanOutput := removeANSIColors(output)
-	
+
 	// Check that output contains the template
 	assert.Contains(s.T(), cleanOutput, "valid.tmpl")
-	
+
 	// Check formatting - should contain success icon
 	assert.Contains(s.T(), cleanOutput, "✓") // Success icon
-	
+
 	// Check status message
 	assert.Contains(s.T(), cleanOutput, "Valid")
 }
