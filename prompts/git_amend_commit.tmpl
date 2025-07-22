@@ -1,0 +1,7 @@
+{{- /* Rewrite the commit message for the most recent commit */ -}}
+
+{{- template "_git_commit_role" . -}}
+
+Your task is to rewrite the commit message for the last commit.
+To understand the context, analyze the changes introduced in that commit using the command: `git show HEAD`
+Based on that analysis, update the last commit using a new, improved commit message.
