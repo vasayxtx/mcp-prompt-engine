@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -272,15 +273,7 @@ func renderTemplate(w io.Writer, promptsDir string, templateName string, cliArgs
 	if err != nil {
 		return err
 	}
-	// Check if specific template exists
-	found := false
-	for _, name := range availableTemplates {
-		if name == templateName {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !slices.Contains(availableTemplates, templateName) {
 		return fmt.Errorf("template %s not found\n\n%s:\n  %s",
 			errorText(templateName),
 			infoText("Available templates"), strings.Join(availableTemplates, "\n  "))
@@ -320,7 +313,7 @@ func renderTemplate(w io.Writer, promptsDir string, templateName string, cliArgs
 	if err = tmpl.ExecuteTemplate(&result, templateName, data); err != nil {
 		return fmt.Errorf("execute template: %w", err)
 	}
-	_, err = w.Write(result.Bytes())
+	_, err = w.Write(bytes.TrimSpace(result.Bytes()))
 	return err
 }
 
@@ -393,15 +386,7 @@ func validateTemplates(w io.Writer, promptsDir string, templateName string) erro
 		return err
 	}
 	if templateName != "" {
-		// Check if specific template exists
-		found := false
-		for _, name := range availableTemplates {
-			if name == templateName {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(availableTemplates, templateName) {
 			return fmt.Errorf("template %q not found in %s", templateName, promptsDir)
 		}
 	}
