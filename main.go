@@ -214,6 +214,9 @@ func versionCommand(ctx context.Context, cmd *cli.Command) error {
 func runStdioMCPServer(w io.Writer, promptsDir string, logFile string, enableJSONArgs bool, quiet bool) error {
 	// Configure logger
 	logWriter := w
+	if quiet {
+		logWriter = io.Discard
+	}
 	if logFile != "" {
 		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
@@ -228,17 +231,6 @@ func runStdioMCPServer(w io.Writer, promptsDir string, logFile string, enableJSO
 	promptsSrv, err := NewPromptsServer(promptsDir, enableJSONArgs, logger)
 	if err != nil {
 		return fmt.Errorf("new prompts server: %w", err)
-	}
-
-	if !quiet {
-		// Count templates for feedback
-		var availableTemplates []string
-		if availableTemplates, err = getAvailableTemplates(promptsDir); err != nil {
-			return fmt.Errorf("get available templates: %w", err)
-		}
-		mustFprintf(w, "%s Found %s templates\n", successIcon(), highlightText(fmt.Sprintf("%d", len(availableTemplates))))
-		mustFprintf(w, "%s Starting MCP server on %s\n", successIcon(), infoText("stdio"))
-		mustFprintf(w, "%s Server ready - waiting for connections\n", successIcon())
 	}
 
 	defer func() {

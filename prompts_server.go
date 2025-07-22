@@ -204,11 +204,11 @@ func (ps *PromptsServer) reloadPrompts() error {
 
 	if len(ps.registeredPrompts) > 0 {
 		ps.mcpServer.DeletePrompts(ps.registeredPrompts...)
+		ps.logger.Info("Prompts unregistered", "count", len(ps.registeredPrompts))
 	}
-	ps.logger.Info("Removed existing prompts", "count", len(ps.registeredPrompts))
 
 	ps.mcpServer.AddPrompts(newServerPrompts...)
-	ps.logger.Info("Added new prompts", "count", len(newServerPrompts))
+	ps.logger.Info("Prompts registered", "count", len(newServerPrompts))
 
 	ps.registeredPrompts = make([]string, 0, len(newServerPrompts))
 	for _, prompt := range newServerPrompts {
