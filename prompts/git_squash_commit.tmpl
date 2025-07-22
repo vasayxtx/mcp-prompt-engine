@@ -1,0 +1,19 @@
+{{- /* Squash commits since a start point and create a new, consolidated commit */ -}}
+
+{{- template "_git_commit_role" . -}}
+
+Your task is to squash all commits after `{{.start_commit}}` into a single new commit and apply a well-formed commit message.
+
+You must follow these steps precisely:
+
+Step 1: Analyze the changes and prepare the commit message.**
+First, analyze the combined diff of all the commits you are about to squash to understand the full scope of the changes doing `git diff {{.start_commit}}..HEAD`
+Based on your analysis of this diff, compose the perfect conventional commit message.
+
+Step 2: Perform the squash operation.
+Execute `git reset --soft {{.start_commit}}`. I will provide the commit message you just composed in the final step.
+
+Step 3: Create the new, squashed commit.
+Finally, use the commit message you composed in Step 1 to create the single, squashed commit doing `git commit -m ...`.
+
+After you have executed these steps, confirm that the operation is complete.
