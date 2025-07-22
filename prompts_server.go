@@ -176,7 +176,7 @@ func (ps *PromptsServer) loadServerPrompts() ([]server.ServerPrompt, error) {
 			mcp.WithPromptDescription(description),
 		}
 		for _, promptArg := range promptArgs {
-			promptOpts = append(promptOpts, mcp.WithArgument(promptArg, mcp.RequiredArgument()))
+			promptOpts = append(promptOpts, mcp.WithArgument(promptArg))
 		}
 
 		promptName := strings.TrimSuffix(file.Name(), templateExt)
@@ -239,7 +239,7 @@ func (ps *PromptsServer) makeMCPHandler(
 			[]mcp.PromptMessage{
 				mcp.NewPromptMessage(
 					mcp.RoleUser,
-					mcp.NewTextContent(result.String()),
+					mcp.NewTextContent(strings.TrimSpace(result.String())),
 				),
 			},
 		), nil
