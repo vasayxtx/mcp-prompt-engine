@@ -356,6 +356,7 @@ func listTemplates(w io.Writer, promptsDir string, verbose bool) error {
 			mustFprintf(w, "%s\n", errorText(fmt.Sprintf("Error: %v", err)))
 		} else {
 			if len(args) > 0 {
+				sort.Strings(args)
 				mustFprintf(w, "  Variables: %s\n", highlightText(strings.Join(args, ", ")))
 			} else {
 				mustFprintf(w, "  Variables:\n")

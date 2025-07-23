@@ -339,28 +339,28 @@ func (s *MainTestSuite) TestListTemplates() {
 			expectedLines: []string{
 				templateText("conditional_greeting.tmpl"),
 				"  Description: Conditional greeting template",
-				"  Variables: ", // Just check that Variables line exists, content may vary
+				"  Variables: name, show_extra_message",
 				templateText("greeting.tmpl"),
 				"  Description: Greeting standalone template with no partials",
-				"  Variables: ",
+				"  Variables: name",
 				templateText("greeting_with_partials.tmpl"),
 				"  Description: Greeting template with partial",
-				"  Variables: ",
+				"  Variables: name",
 				templateText("logical_operators.tmpl"),
 				"  Description: Template with logical operators (and/or) in if blocks",
-				"  Variables: ",
+				"  Variables: feature_enabled, feature_name, has_permission, is_admin, is_premium, is_trial, message, resource, show_error, show_warning, username",
 				templateText("multiple_partials.tmpl"),
 				"  Description: Template with multiple partials",
-				"  Variables: ",
+				"  Variables: author, description, name, title, version",
 				templateText("range_scalars.tmpl"),
 				"  Description: Template for testing range with JSON array of scalars",
-				"  Variables: ",
+				"  Variables: numbers, result, tags",
 				templateText("range_structs.tmpl"),
 				"  Description: Template for testing range with JSON array of structs",
-				"  Variables: ",
+				"  Variables: age, name, role, total, users",
 				templateText("with_object.tmpl"),
 				"  Description: Template for testing with + JSON object",
-				"  Variables: ",
+				"  Variables: config, debug, environment, name, version",
 			},
 			shouldError: false,
 		},
@@ -391,7 +391,7 @@ func (s *MainTestSuite) TestListTemplates() {
 				return
 			}
 
-			// For detailed mode, check structure but be flexible about variable content
+			// For detailed mode, check exact match including variables
 			lineIndex := 0
 			for _, expectedLine := range tt.expectedLines {
 				if lineIndex >= len(lines) {
@@ -399,9 +399,9 @@ func (s *MainTestSuite) TestListTemplates() {
 				}
 
 				if strings.HasPrefix(expectedLine, "  Variables: ") {
-					// Just check that the line starts with "  Variables: " and contains some content
-					assert.True(s.T(), strings.HasPrefix(lines[lineIndex], "  Variables: "),
-						"line %d should start with '  Variables: ', got: %s", lineIndex, lines[lineIndex])
+					// Remove ANSI color codes from the actual line for comparison
+					actualLine := removeANSIColors(lines[lineIndex])
+					assert.Equal(s.T(), expectedLine, actualLine, "line %d should match (variables are now sorted)", lineIndex)
 				} else {
 					assert.Equal(s.T(), expectedLine, lines[lineIndex], "line %d should match", lineIndex)
 				}
