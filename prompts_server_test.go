@@ -45,7 +45,6 @@ func (s *PromptsServerTestSuite) TestServeStdio() {
 		expectedContent string // If empty, only basic validation is performed
 		description     string
 	}{
-		// Argument parsing mode tests with specific expected content
 		{
 			name:            "BasicFunctionality",
 			enableJSONArgs:  false,
@@ -76,62 +75,98 @@ func (s *PromptsServerTestSuite) TestServeStdio() {
 			expectedContent: "Hello Bob!\nThis is an extra message just for you.\nHave a good day.",
 			description:     "Test disabled JSON parsing - 'false' string is truthy",
 		},
-		// All testdata prompts with JSON parsing enabled (basic validation only)
+		// All testdata prompts with JSON parsing enabled (exact content validation)
 		{
-			name:           "greeting",
-			enableJSONArgs: true,
-			promptName:     "greeting",
-			arguments:      map[string]string{"name": "TestUser"},
-			description:    "Test greeting template",
+			name:            "greeting",
+			enableJSONArgs:  true,
+			promptName:      "greeting",
+			arguments:       map[string]string{"name": "TestUser"},
+			description:     "Test greeting template",
+			expectedContent: "Hello TestUser!\nHave a great day!",
 		},
 		{
-			name:           "conditional_greeting",
-			enableJSONArgs: true,
-			promptName:     "conditional_greeting",
-			arguments:      map[string]string{"name": "TestUser", "show_extra_message": "true"},
-			description:    "Test conditional greeting template",
+			name:            "conditional_greeting",
+			enableJSONArgs:  true,
+			promptName:      "conditional_greeting",
+			arguments:       map[string]string{"name": "TestUser", "show_extra_message": "true"},
+			description:     "Test conditional greeting template",
+			expectedContent: "Hello TestUser!\nThis is an extra message just for you.\nHave a good day.",
 		},
 		{
-			name:           "greeting_with_partials",
-			enableJSONArgs: true,
-			promptName:     "greeting_with_partials",
-			arguments:      map[string]string{"name": "TestUser"},
-			description:    "Test greeting template with partials",
+			name:            "greeting_with_partials",
+			enableJSONArgs:  true,
+			promptName:      "greeting_with_partials",
+			arguments:       map[string]string{"name": "TestUser"},
+			description:     "Test greeting template with partials",
+			expectedContent: "Hello TestUser!\nWelcome to the system.\nHave a great day!",
 		},
 		{
 			name:           "logical_operators",
 			enableJSONArgs: true,
 			promptName:     "logical_operators",
-			arguments:      map[string]string{"enabled": "true", "debug": "false", "count": "5"},
-			description:    "Test template with logical operators",
+			arguments: map[string]string{
+				"is_admin":        "true",
+				"has_permission":  "true",
+				"resource":        "admin_panel",
+				"show_warning":    "true",
+				"show_error":      "false",
+				"message":         "System maintenance in progress",
+				"is_premium":      "true",
+				"is_trial":        "false",
+				"feature_enabled": "true",
+				"feature_name":    "Advanced Analytics",
+				"username":        "TestUser",
+			},
+			description:     "Test template with logical operators",
+			expectedContent: "Admin Access: You have full access to admin_panel.\nAlert: System maintenance in progress\nPremium Feature: Advanced Analytics is available.\nUser: TestUser",
 		},
 		{
 			name:           "multiple_partials",
 			enableJSONArgs: true,
 			promptName:     "multiple_partials",
-			arguments:      map[string]string{"name": "TestUser", "title": "Test Title"},
-			description:    "Test template with multiple partials",
+			arguments: map[string]string{
+				"name":        "TestUser",
+				"title":       "Test Title",
+				"author":      "Test Author",
+				"description": "This is a test description for the template",
+				"version":     "v1.0.0",
+			},
+			description:     "Test template with multiple partials",
+			expectedContent: "# Test Title\nCreated by: Test Author\n## Description\nThis is a test description for the template\n## Details\nThis is a test template with multiple partials.\nHello TestUser!\nVersion: v1.0.0",
 		},
 		{
 			name:           "range_scalars",
 			enableJSONArgs: true,
 			promptName:     "range_scalars",
-			arguments:      map[string]string{"items": `["apple", "banana", "cherry"]`},
-			description:    "Test template with range over scalars",
+			arguments: map[string]string{
+				"numbers": `[1, 2, 3, 4, 5]`,
+				"tags":    `["go", "template", "test"]`,
+				"result":  "success",
+			},
+			description:     "Test template with range over scalars",
+			expectedContent: "Numbers: 1 2 3 4 5 \nTags: #go #template #test \nResult: success",
 		},
 		{
 			name:           "range_structs",
 			enableJSONArgs: true,
 			promptName:     "range_structs",
-			arguments:      map[string]string{"users": `[{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]`},
-			description:    "Test template with range over structs",
+			arguments: map[string]string{
+				"users": `[{"name": "Alice", "age": 30, "role": "admin"}, {"name": "Bob", "age": 25, "role": "user"}]`,
+				"total": "2",
+			},
+			description:     "Test template with range over structs",
+			expectedContent: "Users:\n  - Alice (30) - admin\n  - Bob (25) - user\nTotal: 2 users",
 		},
 		{
 			name:           "with_object",
 			enableJSONArgs: true,
 			promptName:     "with_object",
-			arguments:      map[string]string{"user": `{"name": "TestUser", "email": "test@example.com", "active": true}`},
-			description:    "Test template with object argument",
+			arguments: map[string]string{
+				"config":      `{"name": "MyApp", "version": "1.2.3", "debug": true}`,
+				"environment": "development",
+			},
+			description:     "Test template with object argument",
+			expectedContent: "Configuration:\n  Name: MyApp\n  Version: 1.2.3\n  Debug: true\nEnvironment: development",
 		},
 	}
 
@@ -170,11 +205,8 @@ func (s *PromptsServerTestSuite) TestServeStdio() {
 			require.True(s.T(), ok, "Expected TextContent for %s", tc.name)
 			assert.NotEmpty(s.T(), content.Text, "Expected non-empty content for %s", tc.name)
 
-			// If expected content is specified, verify exact match
-			if tc.expectedContent != "" {
-				actualContent := normalizeNewlines(content.Text)
-				assert.Equal(s.T(), tc.expectedContent, actualContent, "Unexpected content for %s: %s", tc.name, tc.description)
-			}
+			actualContent := normalizeNewlines(content.Text)
+			assert.Equal(s.T(), tc.expectedContent, actualContent, "Unexpected content for %s: %s", tc.name, tc.description)
 		})
 	}
 }
