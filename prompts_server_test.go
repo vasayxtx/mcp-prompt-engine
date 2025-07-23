@@ -193,7 +193,7 @@ func (s *PromptsServerTestSuite) TestServeStdioWithJSONArgumentParsing() {
 	ctx := context.Background()
 
 	// Create prompts server that will watch ./testdata directory
-	_, mcpClient, promptsClose := s.makePromptsServerAndClient(ctx, "./testdata", false)
+	_, mcpClient, promptsClose := s.makePromptsServerAndClient(ctx, "./testdata", true)
 	defer promptsClose()
 
 	// Test JSON boolean parsing
@@ -201,7 +201,7 @@ func (s *PromptsServerTestSuite) TestServeStdioWithJSONArgumentParsing() {
 	getReq.Params.Name = "conditional_greeting"
 	getReq.Params.Arguments = map[string]string{
 		"name":               "Alice",
-		"show_extra_message": "true", // JSON boolean becomes actual boolean
+		"show_extra_message": "false", // JSON boolean becomes actual boolean
 	}
 	getResult, err := mcpClient.GetPrompt(ctx, getReq)
 	require.NoError(s.T(), err, "GetPrompt failed")
@@ -211,7 +211,7 @@ func (s *PromptsServerTestSuite) TestServeStdioWithJSONArgumentParsing() {
 	require.True(s.T(), ok, "Expected TextContent")
 
 	actualContent := normalizeNewlines(content.Text)
-	expectedContent := "Hello Alice!\nThis is an extra message just for you.\nHave a good day."
+	expectedContent := "Hello Alice!\nHave a good day."
 	assert.Equal(s.T(), expectedContent, actualContent, "Unexpected content with JSON boolean parsing")
 }
 
