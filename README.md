@@ -1,6 +1,6 @@
 # MCP Prompt Engine
 
-A Model Control Protocol (MCP) server for managing and serving dynamic prompt templates using Go's `text/template` engine.
+A Model Control Protocol (MCP) server for managing and serving dynamic prompt templates using Go's [text/template engine](https://pkg.go.dev/text/template).
 It allows you to create reusable prompt templates with variable placeholders, partials, conditionals, and loops that can be filled in at runtime.
 
 ## Features
@@ -11,7 +11,7 @@ It allows you to create reusable prompt templates with variable placeholders, pa
 - **Automatic JSON Parsing**: Intelligent argument parsing with JSON support and string fallback
 - **Environment Variables**: Automatic injection of environment variables into templates
 - **Hot-Reload**: Efficient file watching with automatic template reloading using fsnotify
-- **MCP Compatible**: Works seamlessly with Claude Desktop, Claude Code, and other MCP clients
+- **MCP Compatible**: Works seamlessly with Claude Desktop, Claude Code, VSCode+Copilot, and other [MCP clients](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/clients.mdx) that support [MCP prompts](https://modelcontextprotocol.io/docs/concepts/prompts)
 
 ## Installation
 
@@ -59,7 +59,7 @@ The Docker container runs as a non-root user and mounts the `prompts` and `logs`
 
 ### Creating Prompt Templates
 
-Create a directory to store your prompt templates. Each template should be a `.tmpl` file using Go's `text/template` syntax with the following format:
+Create a directory to store your prompt templates. Each template should be a `.tmpl` file using Go's [text/template](https://pkg.go.dev/text/template) syntax with the following format:
 
 ```go
 {{/* Brief description of the prompt */}}
