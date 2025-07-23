@@ -33,30 +33,150 @@ func (s *PromptsServerTestSuite) SetupTest() {
 	s.logger = slog.New(slog.DiscardHandler)
 }
 
-// TestServeStdio tests basic server integration with prompts using ServeStdio
+// TestServeStdio tests comprehensive server integration with prompts using ServeStdio
 func (s *PromptsServerTestSuite) TestServeStdio() {
 	ctx := context.Background()
 
-	// Create prompts server that will watch ./testdata directory
-	_, mcpClient, promptsClose := s.makePromptsServerAndClient(ctx, "./testdata", false)
-	defer promptsClose()
+	tests := []struct {
+		name            string
+		enableJSONArgs  bool
+		promptName      string
+		arguments       map[string]string
+		expectedContent string // If empty, only basic validation is performed
+		description     string
+	}{
+		// Argument parsing mode tests with specific expected content
+		{
+			name:            "BasicFunctionality",
+			enableJSONArgs:  false,
+			promptName:      "greeting",
+			arguments:       map[string]string{"name": "John"},
+			expectedContent: "Hello John!\nHave a great day!",
+			description:     "Test basic functionality without JSON argument parsing",
+		},
+		{
+			name:           "WithJSONArgumentParsing",
+			enableJSONArgs: true,
+			promptName:     "conditional_greeting",
+			arguments: map[string]string{
+				"name":               "Alice",
+				"show_extra_message": "false", // JSON boolean becomes actual boolean
+			},
+			expectedContent: "Hello Alice!\nHave a good day.",
+			description:     "Test JSON boolean parsing - 'false' becomes boolean false",
+		},
+		{
+			name:           "WithDisabledJSONArgumentParsing",
+			enableJSONArgs: false,
+			promptName:     "conditional_greeting",
+			arguments: map[string]string{
+				"name":               "Bob",
+				"show_extra_message": "false", // Remains string "false" (truthy!)
+			},
+			expectedContent: "Hello Bob!\nThis is an extra message just for you.\nHave a good day.",
+			description:     "Test disabled JSON parsing - 'false' string is truthy",
+		},
+		// All testdata prompts with JSON parsing enabled (basic validation only)
+		{
+			name:           "greeting",
+			enableJSONArgs: true,
+			promptName:     "greeting",
+			arguments:      map[string]string{"name": "TestUser"},
+			description:    "Test greeting template",
+		},
+		{
+			name:           "conditional_greeting",
+			enableJSONArgs: true,
+			promptName:     "conditional_greeting",
+			arguments:      map[string]string{"name": "TestUser", "show_extra_message": "true"},
+			description:    "Test conditional greeting template",
+		},
+		{
+			name:           "greeting_with_partials",
+			enableJSONArgs: true,
+			promptName:     "greeting_with_partials",
+			arguments:      map[string]string{"name": "TestUser"},
+			description:    "Test greeting template with partials",
+		},
+		{
+			name:           "logical_operators",
+			enableJSONArgs: true,
+			promptName:     "logical_operators",
+			arguments:      map[string]string{"enabled": "true", "debug": "false", "count": "5"},
+			description:    "Test template with logical operators",
+		},
+		{
+			name:           "multiple_partials",
+			enableJSONArgs: true,
+			promptName:     "multiple_partials",
+			arguments:      map[string]string{"name": "TestUser", "title": "Test Title"},
+			description:    "Test template with multiple partials",
+		},
+		{
+			name:           "range_scalars",
+			enableJSONArgs: true,
+			promptName:     "range_scalars",
+			arguments:      map[string]string{"items": `["apple", "banana", "cherry"]`},
+			description:    "Test template with range over scalars",
+		},
+		{
+			name:           "range_structs",
+			enableJSONArgs: true,
+			promptName:     "range_structs",
+			arguments:      map[string]string{"users": `[{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]`},
+			description:    "Test template with range over structs",
+		},
+		{
+			name:           "with_object",
+			enableJSONArgs: true,
+			promptName:     "with_object",
+			arguments:      map[string]string{"user": `{"name": "TestUser", "email": "test@example.com", "active": true}`},
+			description:    "Test template with object argument",
+		},
+	}
 
-	// Test one simple case to verify integration
-	var getReq mcp.GetPromptRequest
-	getReq.Params.Name = "greeting"
-	getReq.Params.Arguments = map[string]string{"name": "John"}
-	getResult, err := mcpClient.GetPrompt(ctx, getReq)
-	require.NoError(s.T(), err, "GetPrompt failed")
+	for _, tc := range tests {
+		s.Run(tc.name, func() {
+			// Create prompts server that will watch ./testdata directory
+			_, mcpClient, promptsClose := s.makePromptsServerAndClient(ctx, "./testdata", tc.enableJSONArgs)
+			defer promptsClose()
 
-	assert.Equal(s.T(), "Greeting standalone template with no partials", getResult.Description, "Unexpected prompt description")
-	require.Len(s.T(), getResult.Messages, 1, "Expected exactly 1 message")
+			// List all available prompts to verify prompt exists
+			listResult, err := mcpClient.ListPrompts(ctx, mcp.ListPromptsRequest{})
+			require.NoError(s.T(), err, "ListPrompts failed for %s", tc.name)
 
-	content, ok := getResult.Messages[0].Content.(mcp.TextContent)
-	require.True(s.T(), ok, "Expected TextContent")
+			// Verify prompt exists in list
+			var foundPrompt *mcp.Prompt
+			for _, prompt := range listResult.Prompts {
+				if prompt.Name == tc.promptName {
+					foundPrompt = &prompt
+					break
+				}
+			}
+			require.NotNil(s.T(), foundPrompt, "Prompt %s not found in list", tc.promptName)
 
-	actualContent := normalizeNewlines(content.Text)
-	expectedContent := "Hello John!\nHave a great day!"
-	assert.Equal(s.T(), expectedContent, actualContent, "Unexpected message content")
+			// Test GetPrompt with specified arguments
+			var getReq mcp.GetPromptRequest
+			getReq.Params.Name = tc.promptName
+			getReq.Params.Arguments = tc.arguments
+			getResult, err := mcpClient.GetPrompt(ctx, getReq)
+			require.NoError(s.T(), err, "GetPrompt failed for %s", tc.name)
+
+			// Verify basic response structure
+			assert.NotEmpty(s.T(), getResult.Description, "Expected non-empty description for %s", tc.name)
+			require.Len(s.T(), getResult.Messages, 1, "Expected exactly 1 message for %s", tc.name)
+
+			content, ok := getResult.Messages[0].Content.(mcp.TextContent)
+			require.True(s.T(), ok, "Expected TextContent for %s", tc.name)
+			assert.NotEmpty(s.T(), content.Text, "Expected non-empty content for %s", tc.name)
+
+			// If expected content is specified, verify exact match
+			if tc.expectedContent != "" {
+				actualContent := normalizeNewlines(content.Text)
+				assert.Equal(s.T(), tc.expectedContent, actualContent, "Unexpected content for %s: %s", tc.name, tc.description)
+			}
+		})
+	}
 }
 
 // TestParseMCPArgs tests parseMCPArgs function functionality
@@ -186,60 +306,6 @@ func (s *PromptsServerTestSuite) TestParseMCPArgs() {
 			assert.Equal(s.T(), tt.expected, data, "parseMCPArgs() returned unexpected result")
 		})
 	}
-}
-
-// TestServeStdioWithJSONArgumentParsing tests JSON argument parsing with ServeStdio integration
-func (s *PromptsServerTestSuite) TestServeStdioWithJSONArgumentParsing() {
-	ctx := context.Background()
-
-	// Create prompts server that will watch ./testdata directory
-	_, mcpClient, promptsClose := s.makePromptsServerAndClient(ctx, "./testdata", true)
-	defer promptsClose()
-
-	// Test JSON boolean parsing
-	var getReq mcp.GetPromptRequest
-	getReq.Params.Name = "conditional_greeting"
-	getReq.Params.Arguments = map[string]string{
-		"name":               "Alice",
-		"show_extra_message": "false", // JSON boolean becomes actual boolean
-	}
-	getResult, err := mcpClient.GetPrompt(ctx, getReq)
-	require.NoError(s.T(), err, "GetPrompt failed")
-
-	require.Len(s.T(), getResult.Messages, 1, "Expected exactly 1 message")
-	content, ok := getResult.Messages[0].Content.(mcp.TextContent)
-	require.True(s.T(), ok, "Expected TextContent")
-
-	actualContent := normalizeNewlines(content.Text)
-	expectedContent := "Hello Alice!\nHave a good day."
-	assert.Equal(s.T(), expectedContent, actualContent, "Unexpected content with JSON boolean parsing")
-}
-
-// TestServeStdioWithDisabledJSONArgumentParsing tests string-only argument parsing with ServeStdio
-func (s *PromptsServerTestSuite) TestServeStdioWithDisabledJSONArgumentParsing() {
-	ctx := context.Background()
-
-	// Create prompts server that will watch ./testdata directory
-	_, mcpClient, promptsClose := s.makePromptsServerAndClient(ctx, "./testdata", false)
-	defer promptsClose()
-
-	// Test that "false" string is truthy (unlike JSON false boolean)
-	var getReq mcp.GetPromptRequest
-	getReq.Params.Name = "conditional_greeting"
-	getReq.Params.Arguments = map[string]string{
-		"name":               "Bob",
-		"show_extra_message": "false", // Remains string "false" (truthy!)
-	}
-	getResult, err := mcpClient.GetPrompt(ctx, getReq)
-	require.NoError(s.T(), err, "GetPrompt failed")
-
-	require.Len(s.T(), getResult.Messages, 1, "Expected exactly 1 message")
-	content, ok := getResult.Messages[0].Content.(mcp.TextContent)
-	require.True(s.T(), ok, "Expected TextContent")
-
-	actualContent := normalizeNewlines(content.Text)
-	expectedContent := "Hello Bob!\nThis is an extra message just for you.\nHave a good day." // Shows extra message because "false" string is truthy
-	assert.Equal(s.T(), expectedContent, actualContent, "Unexpected content with disabled JSON parsing")
 }
 
 // TestReloadPromptsNewPromptAdded tests reloadPrompts method with new prompts via ServeStdio
