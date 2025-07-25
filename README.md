@@ -6,7 +6,7 @@
 [![Go.Dev reference](https://img.shields.io/badge/go.dev-reference-blue?logo=go&logoColor=white)](https://pkg.go.dev/github.com/vasayxtx/mcp-prompt-engine)
 
 A Model Control Protocol (MCP) server for managing and serving dynamic prompt templates using Go's powerful [text/template engine](https://pkg.go.dev/text/template) engine.
-Create reusable, logic-driven prompts with variables, partials, and conditionals that can be served to any compatible MCP client like Claude Desktop or VSCode.
+Create reusable, logic-driven prompts with variables, partials, and conditionals that can be served to any [compatible MCP client](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/clients.mdx) (Claude Code, Claude Desktop, VSCode with Copilot, etc.).
 
 ## Key Features
 
@@ -39,17 +39,29 @@ First, create a reusable partial named `prompts/_git_commit_role.tmpl`:
 {{ define "_git_commit_role" }}
 You are an expert programmer specializing in writing clear, concise, and conventional Git commit messages.
 Commit message must strictly follow the Conventional Commits specification.
+
+The final commit message you generate must be formatted exactly as follows:
+
+```
+<type>: A brief, imperative-tense summary of changes
+
+[Optional longer description, explaining the "why" of the change. Use dash points for clarity.]
+```
+{{ if .type -}}
 Use {{.type}} as a type.
+{{ end }}
 {{ end }}
 ```
 
 Now, create a main prompt `prompts/git_stage_commit.tmpl` that uses this partial:
 ```go
 {{- /* Commit currently staged changes */ -}}
+
 {{- template "_git_commit_role" . -}}
 
 Your task is to commit all currently staged changes.
-Analyze the staged code using `git diff --staged` and generate the perfect commit message.
+To understand the context, analyze the staged code using the command: `git diff --staged`
+Based on that analysis, commit staged changes using a suitable commit message.
 ```
 
 ### 3. Validate Your Prompt
@@ -62,7 +74,7 @@ mcp-prompt-engine validate git_stage_commit
 
 ### 4. Connect MCP Server to Your Client
 
-Connect your MCP client (like Claude Desktop) to the running server. See [Connecting to Clients](#connecting-to-clients) for configuration examples.
+Connect your MCP client (like Claude Code or Claude Desktop) to the running server. See [Connecting to Clients](#connecting-to-clients) for configuration examples.
 
 ### 5. Use Your Prompt
 
