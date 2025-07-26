@@ -12,8 +12,9 @@ Create reusable, logic-driven prompts with variables, partials, and conditionals
 
 -   **MCP Compatible**: Works out-of-the-box with any [MCP client](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/clients.mdx) that supports [prompts](https://modelcontextprotocol.io/docs/concepts/prompts).
 -   **Powerful Go Templates**: Utilizes the full power of Go's `text/template` syntax, including variables, conditionals, loops, and more.
--   **Hot-Reload**: Automatically detects changes to your prompt files and reloads them without restarting the server.
 -   **Reusable Partials**: Define common components in partial templates (e.g., `_header.tmpl`) and reuse them across your prompts.
+-   **Prompt Arguments**: All template variables are automatically exposed as MCP prompt arguments, allowing dynamic input from clients.
+-   **Hot-Reload**: Automatically detects changes to your prompt files and reloads them without restarting the server.
 -   **Rich CLI**: A modern command-line interface to list, validate, and render templates for easy development and testing.
 -   **Smart Argument Handling**:
     -   Automatically parses JSON arguments (booleans, numbers, arrays, objects).
@@ -80,7 +81,7 @@ Connect your MCP client (like Claude Code or Claude Desktop) to the running serv
 
 Your `git_stage_commit` prompt will now be available in your client!
 
-For example, in Claude Desktop, you can select the `git_stage_commit` prompt, provide the `type` argument and get a generated prompt that will help you to do a commit with a perfect message.
+For example, in Claude Desktop, you can select the `git_stage_commit` prompt, provide the `type` MCP Prompt argument and get a generated prompt that will help you to do a commit with a perfect message.
 
 In Claude Code, you can start typing `/git_stage_commit` and it will suggest the prompt with the provided arguments that will be executed after you select it.
 
