@@ -36,34 +36,34 @@ go install github.com/vasayxtx/mcp-prompt-engine@latest
 Create a `prompts` directory and add a template file. Let's create a prompt to help write a Git commit message.
 
 First, create a reusable partial named `prompts/_git_commit_role.tmpl`:
-```go
-{{ define "_git_commit_role" }}
-You are an expert programmer specializing in writing clear, concise, and conventional Git commit messages.
-Commit message must strictly follow the Conventional Commits specification.
+    ```go
+    {{ define "_git_commit_role" }}
+    You are an expert programmer specializing in writing clear, concise, and conventional Git commit messages.
+    Commit message must strictly follow the Conventional Commits specification.
 
-The final commit message you generate must be formatted exactly as follows:
+    The final commit message you generate must be formatted exactly as follows:
 
-```
-<type>: A brief, imperative-tense summary of changes
+    ```
+    <type>: A brief, imperative-tense summary of changes
 
-[Optional longer description, explaining the "why" of the change. Use dash points for clarity.]
-```
-{{ if .type -}}
-Use {{.type}} as a type.
-{{ end }}
-{{ end }}
-```
+    [Optional longer description, explaining the "why" of the change. Use dash points for clarity.]
+    ```
+    {{ if .type -}}
+    Use {{.type}} as a type.
+    {{ end }}
+    {{ end }}
+    ```
 
 Now, create a main prompt `prompts/git_stage_commit.tmpl` that uses this partial:
-```go
-{{- /* Commit currently staged changes */ -}}
+    ```go
+    {{- /* Commit currently staged changes */ -}}
 
-{{- template "_git_commit_role" . -}}
+    {{- template "_git_commit_role" . -}}
 
-Your task is to commit all currently staged changes.
-To understand the context, analyze the staged code using the command: `git diff --staged`
-Based on that analysis, commit staged changes using a suitable commit message.
-```
+    Your task is to commit all currently staged changes.
+    To understand the context, analyze the staged code using the command: `git diff --staged`
+    Based on that analysis, commit staged changes using a suitable commit message.
+    ```
 
 ### 3. Validate Your Prompt
 
@@ -220,20 +220,16 @@ To use this engine with a client like **Claude Desktop**, add a new entry to its
 **Example for a local binary:**
 ```json
 {
-  "my-prompts": {
+  "prompts": {
     "command": "/path/to/your/mcp-prompt-engine",
     "args": [
       "--prompts", "/path/to/your/prompts",
       "serve",
       "--quiet"
-    ],
-    "env": {
-      "ROOT_DIR": "/my/project" 
-    }
+    ]
   }
 }
 ```
-In this example, the value of `ROOT_DIR` environment variable will be automatically injected into any prompt that uses a `{{.root_dir}}` variable.
 
 **Example for Docker:**
 ```json
