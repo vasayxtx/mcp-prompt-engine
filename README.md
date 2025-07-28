@@ -5,13 +5,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go.Dev reference](https://img.shields.io/badge/go.dev-reference-blue?logo=go&logoColor=white)](https://pkg.go.dev/github.com/vasayxtx/mcp-prompt-engine)
 
-A Model Control Protocol (MCP) server for managing and serving dynamic prompt templates using Go's powerful [text/template engine](https://pkg.go.dev/text/template) engine.
-Create reusable, logic-driven prompts with variables, partials, and conditionals that can be served to any [compatible MCP client](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/clients.mdx) (Claude Code, Claude Desktop, VSCode with Copilot, etc.).
+A Model Control Protocol (MCP) server for managing and serving dynamic prompt templates using elegant and powerful text template engine.
+Create reusable, logic-driven prompts with variables, partials, and conditionals that can be served to any [compatible MCP client](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/clients.mdx) like Claude Code, Claude Desktop, Gemini CLI, VSCode with Copilot, etc.
 
 ## Key Features
 
 -   **MCP Compatible**: Works out-of-the-box with any [MCP client](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/clients.mdx) that supports [prompts](https://modelcontextprotocol.io/docs/concepts/prompts).
--   **Powerful Go Templates**: Utilizes the full power of Go's `text/template` syntax, including variables, conditionals, loops, and more.
+-   **Powerful Go Templates**: Utilizes the full power of Go [text/template](https://pkg.go.dev/text/template) syntax, including variables, conditionals, loops, and more.
 -   **Reusable Partials**: Define common components in partial templates (e.g., `_header.tmpl`) and reuse them across your prompts.
 -   **Prompt Arguments**: All template variables are automatically exposed as MCP prompt arguments, allowing dynamic input from clients.
 -   **Hot-Reload**: Automatically detects changes to your prompt files and reloads them without restarting the server.
@@ -75,7 +75,7 @@ mcp-prompt-engine validate git_stage_commit
 
 ### 4. Connect MCP Server to Your Client
 
-Connect your MCP client (like Claude Code or Claude Desktop) to the running server. See [Connecting to Clients](#connecting-to-clients) for configuration examples.
+Add MCP Server to your MCP client. See [Connecting to Clients](#connecting-to-clients) for configuration examples.
 
 ### 5. Use Your Prompt
 
@@ -83,7 +83,7 @@ Your `git_stage_commit` prompt will now be available in your client!
 
 For example, in Claude Desktop, you can select the `git_stage_commit` prompt, provide the `type` MCP Prompt argument and get a generated prompt that will help you to do a commit with a perfect message.
 
-In Claude Code, you can start typing `/git_stage_commit` and it will suggest the prompt with the provided arguments that will be executed after you select it.
+In Claude Code or Gemini CLI, you can start typing `/git_stage_commit` and it will suggest the prompt with the provided arguments that will be executed after you select it.
 
 ---
 
@@ -215,7 +215,12 @@ mcp-prompt-engine --prompts /path/to/prompts serve --log-file ./server.log
 
 ## Connecting to Clients
 
-To use this engine with a client like **Claude Desktop**, add a new entry to its MCP servers configuration.
+To use this engine with any client that supports MCP Prompts, add a new entry to its MCP servers configuration.
+
+Global configuration locations (MacOS):
+- Claude Code: `~/.claude.json` (`mcpServers` section)
+- Claude Desktop: `~/Library/Application\ Support/Claude/claude_desktop_config.json` (`mcpServers` section)
+- Gemini CLI: `~/.gemini/settings.json` (`mcpServers` section)
 
 **Example for a local binary:**
 ```json
