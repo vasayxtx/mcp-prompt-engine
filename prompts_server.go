@@ -19,13 +19,12 @@ import (
 )
 
 type PromptsServer struct {
-	mcpServer         *server.MCPServer
-	parser            *PromptsParser
-	promptsDir        string
-	enableJSONArgs    bool
-	logger            *slog.Logger
-	watcher           *fsnotify.Watcher
-	registeredPrompts []string
+	mcpServer      *server.MCPServer
+	parser         *PromptsParser
+	promptsDir     string
+	enableJSONArgs bool
+	logger         *slog.Logger
+	watcher        *fsnotify.Watcher
 }
 
 // NewPromptsServer creates a new PromptsServer instance that serves prompts from the specified directory.
@@ -202,18 +201,8 @@ func (ps *PromptsServer) reloadPrompts() error {
 		return fmt.Errorf("load server prompts: %w", err)
 	}
 
-	if len(ps.registeredPrompts) > 0 {
-		ps.mcpServer.DeletePrompts(ps.registeredPrompts...)
-		ps.logger.Info("Prompts unregistered", "count", len(ps.registeredPrompts))
-	}
-
-	ps.mcpServer.AddPrompts(newServerPrompts...)
+	ps.mcpServer.SetPrompts(newServerPrompts...)
 	ps.logger.Info("Prompts registered", "count", len(newServerPrompts))
-
-	ps.registeredPrompts = make([]string, 0, len(newServerPrompts))
-	for _, prompt := range newServerPrompts {
-		ps.registeredPrompts = append(ps.registeredPrompts, prompt.Prompt.Name)
-	}
 
 	return nil
 }

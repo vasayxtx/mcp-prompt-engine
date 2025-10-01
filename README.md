@@ -36,6 +36,7 @@ go install github.com/vasayxtx/mcp-prompt-engine@latest
 Create a `prompts` directory and add a template file. Let's create a prompt to help write a Git commit message.
 
 First, create a reusable partial named `prompts/_git_commit_role.tmpl`:
+
     ```go
     {{ define "_git_commit_role" }}
     You are an expert programmer specializing in writing clear, concise, and conventional Git commit messages.
