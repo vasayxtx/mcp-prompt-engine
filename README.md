@@ -21,6 +21,10 @@ Create reusable, logic-driven prompts with variables, partials, and conditionals
     -   Injects environment variables as fallbacks for template arguments.
 -   **Containerized**: Full Docker support for easy deployment and integration.
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/vasayxtx-mcp-prompt-engine).
+
 ## Getting Started
 
 ### 1. Installation
